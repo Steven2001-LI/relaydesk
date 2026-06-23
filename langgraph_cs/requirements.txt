@@ -1,0 +1,5 @@
+# langgraph_cs —— 阶段 2 骨架依赖
+langgraph>=0.2.40
+langchain-openai>=0.2.0
+langchain-core>=0.3.0
+python-dotenv>=1.0.1
