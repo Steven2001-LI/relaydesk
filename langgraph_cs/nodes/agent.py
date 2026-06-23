@@ -27,6 +27,20 @@ _PROMPTS = {
 }
 _DEFAULT_PROMPT = "你是 EchoMind 智能客服。友好、简洁地回答用户问题；超出能力范围时如实说明并建议转人工。"
 
+# 当 rag_node 检索到知识库文档时，追加这段指示：优先依据知识库，没有就如实说。
+_RAG_INSTRUCTION = (
+    "下面是从知识库检索到的参考资料。回答时优先依据这些资料；"
+    "若资料中没有相关信息，就如实告知用户你暂时没有查到，不要编造。"
+)
+
+
+def _build_rag_context(retrieved_docs) -> str:
+    """把检索到的文档拼成一段"参考资料"文本；没有则返回空串。"""
+    if not retrieved_docs:
+        return ""
+    blocks = [f"[资料{i + 1}] {doc}" for i, doc in enumerate(retrieved_docs)]
+    return _RAG_INSTRUCTION + "\n\n参考资料：\n" + "\n\n".join(blocks)
+
 
 def agent_node(state) -> dict:
     intent = state.get("intent") or "other"
@@ -34,9 +48,16 @@ def agent_node(state) -> dict:
 
     llm = build_llm(temperature=0.5)
 
-    # 把 system prompt 放在最前，后面接完整对话历史（state["messages"] 已经累积好了）。
-    messages = [SystemMessage(content=system_prompt)] + list(state["messages"])
+    # 把 system prompt 放在最前。若 rag_node 检索到了文档，再追加一条
+    # SystemMessage 作为"参考资料"背景，指示模型优先依据知识库作答。
+    messages = [SystemMessage(content=system_prompt)]
+    rag_context = _build_rag_context(state.get("retrieved_docs"))
+    if rag_context:
+        messages.append(SystemMessage(content=rag_context))
+    # 后面接完整对话历史（state["messages"] 已经累积好了）。
+    messages += list(state["messages"])
     resp = llm.invoke(messages)
 
-    logger.info("agent 应答完成（intent=%s）", intent)
+    logger.info("agent 应答完成（intent=%s，参考资料 %d 条）",
+                intent, len(state.get("retrieved_docs") or []))
     return {"messages": [AIMessage(content=resp.content)]}

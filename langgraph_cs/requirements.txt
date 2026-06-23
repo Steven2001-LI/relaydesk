@@ -3,3 +3,12 @@ langgraph>=0.2.40
 langchain-openai>=0.2.0
 langchain-core>=0.3.0
 python-dotenv>=1.0.1
+
+# 阶段 3 RAG（PR1 检索地基）依赖
+langchain-chroma>=0.1.4        # 向量库 Chroma 的 LangChain 封装（本地持久化）
+langchain-text-splitters>=0.3.0  # LangChain 切块件（本项目改为按 ### 条目精确切块，未直接使用，保留以备扩展）
+httpx>=0.27.0                  # 调硅基流动自有 /rerank 接口
+
+# 阶段 3 RAG（弱检索器 BM25 对照）依赖
+rank-bm25>=0.2.2              # BM25Okapi 词法/稀疏检索，作为 rerank 价值对照的弱一阶段检索器
+jieba>=0.42.1                # 中文分词（BM25 按词项匹配，中文需先分词）

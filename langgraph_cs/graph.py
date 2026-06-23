@@ -1,8 +1,10 @@
 """
 组装并编译 LangGraph 图。
 
-图的形态（阶段 2 最简版）：
-    START -> intent_node -> agent_node -> END
+图的形态（PR2 接入 RAG 后）：
+    START -> intent_node -> rag_node -> agent_node -> END
+  rag_node 夹在中间：先按意图决定是否检索知识库，把参考文档写进 state，
+  agent_node 再带着这些文档作答（greeting/other 意图 rag_node 会早退、不检索）。
 
 关键概念：
   - add_node：把函数注册为节点
@@ -15,6 +17,7 @@ from langgraph.graph import END, START, StateGraph
 
 from langgraph_cs.nodes.agent import agent_node
 from langgraph_cs.nodes.intent import intent_node
+from langgraph_cs.nodes.rag import rag_node
 from langgraph_cs.state import CSState
 
 
@@ -22,10 +25,12 @@ def build_graph():
     builder = StateGraph(CSState)
 
     builder.add_node("intent", intent_node)
+    builder.add_node("rag", rag_node)
     builder.add_node("agent", agent_node)
 
     builder.add_edge(START, "intent")
-    builder.add_edge("intent", "agent")
+    builder.add_edge("intent", "rag")
+    builder.add_edge("rag", "agent")
     builder.add_edge("agent", END)
 
     # MemorySaver：进程内存版检查点。零依赖、重启即丢。

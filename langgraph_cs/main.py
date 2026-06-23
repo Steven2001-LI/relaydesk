@@ -4,7 +4,7 @@
 用法：
     python -m langgraph_cs.main
 
-每次输入一句话，图会执行 intent -> agent，并打印识别到的意图和回复。
+每次输入一句话，图会执行 intent -> rag -> agent，并打印识别到的意图和回复。
 因为编译时挂了 checkpointer，同一个 thread_id 下的多轮对话会自动记得上文，
 你可以试着先说"我叫小明"，下一句问"我叫什么"，看它是否记得。
 """

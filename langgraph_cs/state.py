@@ -24,3 +24,7 @@ class CSState(TypedDict):
 
     # 意图置信度（0~1）。教学版先放着，阶段 3 做"低置信度转人工"时会用到。
     confidence: Optional[float]
+
+    # RAG 检索到的参考文档文本列表（rag_node 写入，agent_node 读取拼进上下文）。
+    # greeting/other 意图早退时为空列表 []，表示"本轮不检索"。
+    retrieved_docs: list

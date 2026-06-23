@@ -13,9 +13,8 @@ intent_node —— 意图识别节点。
 import json
 import logging
 
-from langchain_core.messages import HumanMessage
-
 from langgraph_cs.config import build_llm
+from langgraph_cs.nodes.utils import last_user_text
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +26,6 @@ _SYSTEM_PROMPT = (
     f"可选类别：{', '.join(INTENTS)}\n"
     "只输出 JSON，格式：{\"intent\": \"<类别>\", \"confidence\": <数字>}，不要任何多余文字。"
 )
-
-
-def _last_user_text(state) -> str:
-    """从 state.messages 里取出最后一条用户消息的文本。"""
-    for msg in reversed(state["messages"]):
-        if isinstance(msg, HumanMessage):
-            return msg.content
-    return ""
 
 
 def _strip_code_fence(text: str) -> str:
@@ -58,7 +49,7 @@ def _strip_code_fence(text: str) -> str:
 
 
 def intent_node(state) -> dict:
-    user_text = _last_user_text(state)
+    user_text = last_user_text(state)
     llm = build_llm(temperature=0.0)  # 分类要确定性，温度调到 0
 
     resp = llm.invoke(

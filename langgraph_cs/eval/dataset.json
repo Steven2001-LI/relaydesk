@@ -1,0 +1,281 @@
+[
+  {
+    "question": "登录密码忘了进不去，怎么重新弄个新的？",
+    "relevant_ids": ["account-01"],
+    "expected_keywords": ["忘记密码", "验证码", "重置", "强制下线"]
+  },
+  {
+    "question": "我还记得现在的密码，就是想换一个，在哪改？",
+    "relevant_ids": ["account-02"],
+    "expected_keywords": ["修改密码", "当前密码", "其他已登录设备", "踢下线"]
+  },
+  {
+    "question": "密码连着输错好几遍，账号被锁了，得等多久才能再登？",
+    "relevant_ids": ["account-03"],
+    "expected_keywords": ["锁定30分钟", "自动解除", "忘记密码", "重置"]
+  },
+  {
+    "question": "付款时要的那个支付密码我忘了，怎么重新设置？",
+    "relevant_ids": ["account-04"],
+    "expected_keywords": ["支付设置", "身份证后4位", "6位纯数字", "登录密码相互独立"]
+  },
+  {
+    "question": "收到提醒说我账号在外地登录了，是不是号被盗了？",
+    "relevant_ids": ["account-05"],
+    "expected_keywords": ["异地登录", "安全提醒", "下线该设备", "不代表一定被盗"]
+  },
+  {
+    "question": "确定被盗号了还有人乱下单，我得赶紧怎么办？",
+    "relevant_ids": ["account-06"],
+    "expected_keywords": ["客服热线", "账号申诉", "冻结", "异常订单"]
+  },
+  {
+    "question": "想换成我新办的手机号来绑账号，步骤是怎样的？",
+    "relevant_ids": ["account-08"],
+    "expected_keywords": ["更换手机号", "原手机号", "验证码", "立即生效"]
+  },
+  {
+    "question": "旧号已经销户了收不到码，那要怎么换绑新号？",
+    "relevant_ids": ["account-09"],
+    "expected_keywords": ["换绑申诉", "实名证件", "人脸识别", "1-3个工作日"]
+  },
+  {
+    "question": "我想给账号做实名，得准备点啥东西？",
+    "relevant_ids": ["account-11"],
+    "expected_keywords": ["实名认证", "身份证号", "人脸识别", "限额"]
+  },
+  {
+    "question": "登录的短信验证码点了好几次都收不到，啥原因？",
+    "relevant_ids": ["account-15"],
+    "expected_keywords": ["短信延迟", "106", "语音验证码", "重新发送"]
+  },
+  {
+    "question": "登录时除了密码还让我再输个动态码，这个怎么关掉？",
+    "relevant_ids": ["account-17"],
+    "expected_keywords": ["登录保护", "两步验证", "新设备", "短信验证"]
+  },
+
+  {
+    "question": "退款发起了一般要等多久钱才能回到我账上？",
+    "relevant_ids": ["billing-01"],
+    "expected_keywords": ["原支付方式", "1-7个工作日", "信用卡", "退款详情"]
+  },
+  {
+    "question": "我这退款怎么老是失败一直退不回来啊？",
+    "relevant_ids": ["billing-03"],
+    "expected_keywords": ["银行卡已注销", "错误码", "180天", "风控"]
+  },
+  {
+    "question": "我想报销，能开发票不？是电子的还是纸质的？",
+    "relevant_ids": ["billing-05"],
+    "expected_keywords": ["电子发票", "确认收货", "增值税专用发票", "3-5个工作日"]
+  },
+  {
+    "question": "发票抬头税号填错了还能重新开一张吗？",
+    "relevant_ids": ["billing-07"],
+    "expected_keywords": ["申请重开", "冲红", "90天", "纸质专票"]
+  },
+  {
+    "question": "有张券但结算的时候死活用不了，是哪里的问题？",
+    "relevant_ids": ["billing-09"],
+    "expected_keywords": ["未达门槛", "适用范围", "互斥", "过期"]
+  },
+  {
+    "question": "我啥都没买怎么莫名其妙被扣钱了？",
+    "relevant_ids": ["billing-11"],
+    "expected_keywords": ["自动续费", "免密支付", "交易记录", "签约"]
+  },
+  {
+    "question": "自动续费连续包月怎么取消掉，别再扣我钱了？",
+    "relevant_ids": ["billing-12"],
+    "expected_keywords": ["自动续费管理", "关闭", "解约", "到期不再扣费"]
+  },
+  {
+    "question": "同一个订单被扣了两次款，多扣的那笔怎么退？",
+    "relevant_ids": ["billing-13"],
+    "expected_keywords": ["重复扣款", "T+1", "原路退回", "流水号"]
+  },
+  {
+    "question": "你们都能用什么方式付款，支持花呗分期不？",
+    "relevant_ids": ["billing-14"],
+    "expected_keywords": ["微信支付", "支付宝", "信用卡分期", "余额抵扣"]
+  },
+  {
+    "question": "我买完第二天东西就降价了，差价能退我吗？",
+    "relevant_ids": ["billing-18"],
+    "expected_keywords": ["价格保护", "15天", "官方直降", "补退差价"]
+  },
+  {
+    "question": "退款到底是退回原来付款的渠道，还是进余额？",
+    "relevant_ids": ["billing-22"],
+    "expected_keywords": ["原路退回", "原卡已注销", "180天", "账户余额"]
+  },
+
+  {
+    "question": "退款审核过了，钱大概几天能回到我账户？",
+    "relevant_ids": ["orders-01"],
+    "expected_keywords": ["原路退回", "1-7个工作日", "退款单号", "余额实时到账"]
+  },
+  {
+    "question": "东西不想要了，到哪里去申请退款啊？",
+    "relevant_ids": ["orders-02"],
+    "expected_keywords": ["我的订单", "仅退款", "退货退款", "退款详情"]
+  },
+  {
+    "question": "下单好几天了商家一直不发货，他们到底多久得发？",
+    "relevant_ids": ["orders-05"],
+    "expected_keywords": ["48小时", "预售", "延迟发货赔付", "5%"]
+  },
+  {
+    "question": "我买了三件，怎么只来了一个包裹，其它的去哪了？",
+    "relevant_ids": ["orders-08"],
+    "expected_keywords": ["部分发货", "分仓", "多个物流单号", "单独申请退款"]
+  },
+  {
+    "question": "我的快递好几天都没更新轨迹，是不是丢了？",
+    "relevant_ids": ["orders-10"],
+    "expected_keywords": ["运输中转", "快递公司客服", "72小时", "物流异常核查"]
+  },
+  {
+    "question": "物流明明显示签收了，可我压根没收到东西啊？",
+    "relevant_ids": ["orders-11"],
+    "expected_keywords": ["代收", "快递柜", "48小时", "虚假签收"]
+  },
+  {
+    "question": "下单地址写错了，现在还能改收货地址吗？",
+    "relevant_ids": ["orders-13"],
+    "expected_keywords": ["未发货", "修改地址", "1次", "同城"]
+  },
+  {
+    "question": "买回来不合适，七天无理由退货到底怎么算时间？",
+    "relevant_ids": ["orders-16"],
+    "expected_keywords": ["确认收货", "7个自然日", "二次销售", "运费"]
+  },
+  {
+    "question": "想换个尺码或者颜色，换货是怎么个流程？",
+    "relevant_ids": ["orders-17"],
+    "expected_keywords": ["申请换货", "寄回", "2-3个工作日", "运费"]
+  },
+  {
+    "question": "退货来回的邮费到底是我出还是商家出？",
+    "relevant_ids": ["orders-18"],
+    "expected_keywords": ["质量问题", "商家承担", "七天无理由", "运费险"]
+  },
+  {
+    "question": "包裹运输途中被摔坏了，这种损坏怎么索赔？",
+    "relevant_ids": ["orders-21"],
+    "expected_keywords": ["48小时", "运输损坏理赔", "保价", "补发"]
+  },
+
+  {
+    "question": "短信验证码总是收不到，这该怎么处理？",
+    "relevant_ids": ["tech-01"],
+    "expected_keywords": ["60秒", "拦截软件", "10条", "语音验证码"]
+  },
+  {
+    "question": "明明照着输的验证码却老说我输错了，咋回事？",
+    "relevant_ids": ["tech-02"],
+    "expected_keywords": ["上一条", "空格", "最新一条", "锁定30分钟"]
+  },
+  {
+    "question": "登录时弹出来个401，这是什么毛病？",
+    "relevant_ids": ["tech-05"],
+    "expected_keywords": ["身份认证失败", "登录态超时", "重新登录", "清除缓存"]
+  },
+  {
+    "question": "操作时报了403，这跟401到底有啥不一样？",
+    "relevant_ids": ["tech-06"],
+    "expected_keywords": ["无权访问", "账号等级", "实名认证", "重新登录无效"]
+  },
+  {
+    "question": "页面蹦出来一个500错误码，我该怎么搞？",
+    "relevant_ids": ["tech-07"],
+    "expected_keywords": ["服务器内部错误", "服务端", "刷新", "官方公告"]
+  },
+  {
+    "question": "打开页面显示502，是不是我手机出问题了？",
+    "relevant_ids": ["tech-08"],
+    "expected_keywords": ["网关错误", "集群", "自动恢复", "服务高峰"]
+  },
+  {
+    "question": "App刚一打开就闪退，连首页都进不去啊。",
+    "relevant_ids": ["tech-09"],
+    "expected_keywords": ["缓存损坏", "清除App缓存", "卸载重装", "最新版本"]
+  },
+  {
+    "question": "升级到新版本以后App反倒打不开了，咋办？",
+    "relevant_ids": ["tech-11"],
+    "expected_keywords": ["未完整覆盖", "卸载", "官方应用商店", "第三方渠道"]
+  },
+  {
+    "question": "页面一直转圈圈，半天加载不出来内容。",
+    "relevant_ids": ["tech-12"],
+    "expected_keywords": ["网络不稳定", "DNS", "切换Wi-Fi", "VPN"]
+  },
+  {
+    "question": "文字能正常显示，但是图片全都刷不出来。",
+    "relevant_ids": ["tech-13"],
+    "expected_keywords": ["图片CDN", "清除图片缓存", "切换网络", "无图模式"]
+  },
+  {
+    "question": "反馈问题时客服让我提供日志，去哪儿导出啊？",
+    "relevant_ids": ["tech-20"],
+    "expected_keywords": ["导出诊断日志", "时间段", "崩溃堆栈", "7天"]
+  },
+
+  {
+    "question": "我攒的那些积分到底多久会过期清掉？",
+    "relevant_ids": ["member-01"],
+    "expected_keywords": ["24个月", "12月31日", "清零", "30天提醒"]
+  },
+  {
+    "question": "买东西怎么才能拿到积分，运费也算吗？",
+    "relevant_ids": ["member-02"],
+    "expected_keywords": ["每满1元1积分", "运费不计", "确认收货", "T+1"]
+  },
+  {
+    "question": "100个积分下单时能抵多少钱？",
+    "relevant_ids": ["member-03"],
+    "expected_keywords": ["100积分=1元", "50%", "整数倍", "不开发票"]
+  },
+  {
+    "question": "怎么才能把我的会员等级往上升一升？",
+    "relevant_ids": ["member-06"],
+    "expected_keywords": ["累计实付消费", "2000元", "V2", "自动升级"]
+  },
+  {
+    "question": "我会员等级会不会哪天就掉下去了？",
+    "relevant_ids": ["member-08"],
+    "expected_keywords": ["降级", "1月1日", "保级门槛", "下调一级"]
+  },
+  {
+    "question": "不同的会员级别之间待遇差在哪儿？",
+    "relevant_ids": ["member-09"],
+    "expected_keywords": ["生日双倍积分", "免邮券", "专属客服", "黑卡"]
+  },
+  {
+    "question": "你们的人工客服一般几点上班，晚上找得到人吗？",
+    "relevant_ids": ["member-10"],
+    "expected_keywords": ["09:00-21:00", "智能客服", "7×24", "次日"]
+  },
+  {
+    "question": "过年放假那几天还有没有人工客服在啊？",
+    "relevant_ids": ["member-12"],
+    "expected_keywords": ["法定节假日", "10:00-18:00", "智能客服", "公告"]
+  },
+  {
+    "question": "我想投诉，该走哪个渠道、多久会有人来处理？",
+    "relevant_ids": ["member-13"],
+    "expected_keywords": ["意见反馈", "监督专线", "48小时", "7个工作日"]
+  },
+  {
+    "question": "账户里的余额能不能提现到我银行卡？",
+    "relevant_ids": ["member-18"],
+    "expected_keywords": ["充值赠送", "不可提现", "本金充值", "T+7"]
+  },
+  {
+    "question": "付费会员一年要多少钱，到期了怎么续？",
+    "relevant_ids": ["member-21"],
+    "expected_keywords": ["PLUS", "108元", "连续包年", "自动续费"]
+  }
+]
