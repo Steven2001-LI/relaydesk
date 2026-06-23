@@ -1,8 +1,10 @@
 """
 langgraph_cs —— 用 LangGraph 重写的最小客服 Agent 骨架。
 
-学习目标（阶段 2）：
-  跑通第一张能用的图：intent_node → agent_node，并用 checkpointer 维持多轮记忆。
+学习目标（阶段 3）：
+  跑通多 Agent 编排：intent → rag →(条件路由)→ 专职 Agent（technical/billing/general/escalation），
+  用 add_conditional_edges 做意图路由 + 低置信度降级，用 interrupt/resume 做 human-in-the-loop，
+  并用 checkpointer 维持多轮记忆。
 
 对照 EchoMind（手写 anthropic SDK）的同名概念：
   - EchoMind 的 Request/Orchestrator 一堆 dataclass  ->  这里的 CSState（TypedDict）

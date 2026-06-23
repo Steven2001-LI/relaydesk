@@ -19,7 +19,10 @@ from langgraph_cs.nodes.utils import last_user_text
 logger = logging.getLogger(__name__)
 
 # 支持的意图集合（精简版，对照 EchoMind 的 IntentCategory）。
-INTENTS = ["greeting", "query", "technical", "billing", "complaint", "request", "other"]
+# 阶段 3 新增 escalation（转人工/人工升级）：当用户明确要求人工坐席、或专职 Agent 无法处理时，
+# 由这个意图触发 human-in-the-loop。对照 EchoMind 里 _needs_escalation 的关键词检测
+# （转人工 / 人工客服 / escalate / 无法处理）——这里交给 LLM 统一识别成一个意图。
+INTENTS = ["greeting", "query", "technical", "billing", "complaint", "request", "escalation", "other"]
 
 _SYSTEM_PROMPT = (
     "你是一个意图分类器。判断用户最后一句话属于以下哪一类，并给出 0~1 的置信度。\n"

@@ -28,3 +28,7 @@ class CSState(TypedDict):
     # RAG 检索到的参考文档文本列表（rag_node 写入，agent_node 读取拼进上下文）。
     # greeting/other 意图早退时为空列表 []，表示"本轮不检索"。
     retrieved_docs: list
+
+    # 是否走了"转人工"（human-in-the-loop）。escalation_node 在拿到人工回复后置 True，
+    # 方便外层（CLI / 评测）观测本轮是否经过人工介入。阶段 3 新增，默认 None/缺省即未转人工。
+    escalated: Optional[bool]

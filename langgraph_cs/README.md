@@ -1,18 +1,37 @@
-# langgraph_cs —— LangGraph 客服 Agent（阶段 2 骨架 + 阶段 1 RAG）
+# langgraph_cs —— LangGraph 客服 Agent（阶段 3 多 Agent 路由 + RAG）
 
 用 **LangGraph** 重写的最小可跑客服 Agent，作为秋招简历项目的起点。
 参照本仓库 EchoMind（手写 anthropic SDK）的架构，但改用 LangGraph 的原生抽象，重点是**讲得清每一行**。
 
-## 这张图在做什么
+## 这张图在做什么（阶段 3：多 Agent 条件路由 + human-in-the-loop）
 
 ```
-START → intent(意图识别) → rag(检索知识库) → agent(按意图+检索结果应答) → END
-                                  ↑
-                  编译时挂 MemorySaver(checkpointer)，靠 thread_id 记住多轮上下文
+                                          ┌─[technical]──────→ technical_agent ─┐
+                                          │                                     │
+START → intent → rag ─(route_by_intent)──┼─[billing]────────→ billing_agent  ─┤
+                                          │                                     ├→ END
+                          低置信/其余/未知 ─┼──────────────────→ general_agent  ─┤
+                                          │                                     │
+                                          └─[escalation]─────→ escalation ──────┘
+                                                                 │（interrupt 暂停等人工 → resume）
+                  编译时挂 MemorySaver(checkpointer)，靠 thread_id 记住多轮上下文 + 保存中断点
 ```
 
-`rag_node` 对 greeting/other 意图早退（不检索），其余意图先从知识库召回 top-k，
-可选地再用 rerank 精排截 top-n，写进 `state["retrieved_docs"]` 供 agent 引用。
+阶段 1/2 是「一个 `agent_node` + 按意图换 system prompt」；阶段 3 升级为**真正的多 Agent 编排**：
+
+- **意图路由**：`rag → agent` 直连换成 `add_conditional_edges`，路由函数 `route_by_intent` 按
+  `state["intent"]` 把请求分流到 `technical_agent` / `billing_agent` / `general_agent` / `escalation`。
+- **失败降级（两层）**：
+  1. *低置信度降级*——路由函数里 `confidence < 0.5` 时不管什么意图一律落到 `general_agent`（低置信不交给专职 Agent 自作主张）。
+  2. *运行时降级*——专职节点内部对 LLM 调用 `try/except`，单个 Agent 报错时返回兜底回复，不让整图崩。
+- **human-in-the-loop**：意图为 `escalation`（用户要求转人工）时走 `escalation` 节点，用 LangGraph 原生
+  `interrupt()` **暂停整张图**抛出坐席提示；CLI 读人工输入后用 `Command(resume=...)` 恢复，把人工回复写回对话。
+  依赖 checkpointer（MemorySaver）+ thread_id 保存/恢复中断点。
+
+`rag_node` 行为不变：对 greeting/other 意图早退（不检索），其余意图先从知识库召回 top-k，
+可选地再用 rerank 精排截 top-n，写进 `state["retrieved_docs"]`，每个专职 Agent 都会带上这些参考资料作答。
+
+试一句「我要转人工」即可体验暂停/恢复：程序会要求你以坐席身份输入一句回复，再作为最终回复继续。
 
 ## 怎么跑
 
@@ -121,15 +140,34 @@ chunk 的 `metadata["item_id"]`（条目级，121 条各有唯一 id）是否落
 
 | 文件 | 作用 | 对照 EchoMind |
 |---|---|---|
-| `state.py` | 图的状态 `CSState`（TypedDict + `add_messages`） | 一堆 Request/Result dataclass |
-| `nodes/intent.py` | 意图识别节点（教学版单路） | `core/intent_recognizer.py`（三路融合） |
-| `nodes/agent.py` | 按意图选 system prompt 应答 | `agents/agent_orchestrator.py` 各 Agent |
-| `graph.py` | 组装 StateGraph + 挂 checkpointer | Orchestrator 的 run 编排 + redis 会话 |
-| `main.py` | CLI 入口 | `api/main.py` 的 `_cli()` |
+| `state.py` | 图的状态 `CSState`（TypedDict + `add_messages`，阶段 3 加 `escalated` 标记） | 一堆 Request/Result dataclass |
+| `nodes/intent.py` | 意图识别节点（教学版单路，阶段 3 加 `escalation` 意图） | `core/intent_recognizer.py`（三路融合） |
+| `nodes/agent.py` | 多个专职 Agent 节点（technical/billing/general），共享 `_run_agent` 出字 + 失败兜底 | `agents/agent_orchestrator.py` 的 TechnicalAgent/BillingAgent/GeneralAgent |
+| `nodes/router.py` | 路由函数 `route_by_intent`（意图路由 + 低置信度降级） | Orchestrator 的 `_route` / 降级路由 |
+| `nodes/escalation.py` | 转人工节点：`interrupt()` 暂停等人工，resume 后写回回复 | `_needs_escalation` 关键词检测（占位，未真正阻塞） |
+| `graph.py` | 组装 StateGraph + `add_conditional_edges` + 挂 checkpointer | Orchestrator 的 run 编排 + 三层路由 + redis 会话 |
+| `main.py` | CLI 入口（支持 interrupt → 人工输入 → resume 循环） | `api/main.py` 的 `_cli()` |
+
+### 对照 EchoMind 的 `agent_orchestrator.py`
+
+EchoMind 在 `agents/agent_orchestrator.py` 里**手写**了三层路由：意图路由（按 `IntentCategory` 选专属 Agent）、
+性能路由（同类多实例按 `routing_score()` 选最优）、降级路由（专属 Agent 不可用/失败 → `GeneralAgent`），
+升级靠 `_needs_escalation` 关键词检测（`转人工/人工客服/escalate/无法处理`）置 `escalate` 标志（**仅占位、未真正阻塞等人工**）。
+
+langgraph_cs 用 LangGraph **原生能力**表达同一套思路，少写很多胶水代码：
+
+| EchoMind（手写） | langgraph_cs（LangGraph 原生） |
+|---|---|
+| Orchestrator 里 `if intent == ...` 选 Agent | `add_conditional_edges` + `route_by_intent` |
+| `_execute_with_fallback` try/except 降级到 General | 路由函数低置信度降级 + 专职节点内部 try/except |
+| `_needs_escalation` 置 `escalate` 标志（不阻塞） | `escalation` 节点 `interrupt()` **真正暂停 + 等人工 + `Command(resume=...)` 恢复** |
+| redis 手写会话管理 | 编译时挂 `MemorySaver` checkpointer，按 thread_id 自动维持 |
+| 性能路由（routing_score 选优） | **暂未做**，留作扩展点（同类多 Agent 实例时再加） |
 
 ## 下一步（路线图）
 
-- **阶段 3**：`add_edge` 换成 `add_conditional_edges`，按意图路由到多个真正的 Agent 节点 + 失败降级
 - **阶段 1/RAG**（已完成）：在 agent 前加 `rag_node`，用 LangChain Retriever 检索知识库，做朴素 vs rerank 的指标对比（见上方「RAG 检索链路」）
-- **阶段 4**：`interrupt` 实现 human-in-the-loop（低置信度转人工）；接 LangSmith 自动评测
+- **阶段 3**（已完成）：`add_edge` 换成 `add_conditional_edges`，按意图路由到多个真正的 Agent 节点 + 失败降级（低置信 + 运行时）+ `interrupt` 实现 human-in-the-loop 转人工（见上方路由图）
+- **性能路由（扩展点）**：同类多 Agent 实例时按 `routing_score` 选最优（对照 EchoMind 性能路由，本阶段先不做）
+- **阶段 4**：接 LangSmith 自动评测
 - **持久化**：`MemorySaver` → `SqliteSaver`/`RedisSaver`
