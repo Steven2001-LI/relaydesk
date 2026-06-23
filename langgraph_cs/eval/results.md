@@ -60,14 +60,14 @@
 
 - recovered（B 把 A 漏掉的 query 救成命中）：**1**
 - regressed（A 命中但 B 漏掉，理想为 0）：0
-- changed（top-3 条目集合发生变化的 query 数）：49
+- changed（top-3 条目集合发生变化的 query 数）：50
 
 ### n sweep（n ∈ {1, 3, 5}）
 
 | top-n | A Hit | B Hit | A MRR | B MRR | recovered | changed |
 |---|---|---|---|---|---|---|
 | 1 | 87.3% | 92.7% | 0.873 | 0.927 | 3 | 3 |
-| 3 | 98.2% | 100.0% | 0.927 | 0.964 | 1 | 50 |
+| 3 | 98.2% | 100.0% | 0.927 | 0.964 | 1 | 49 |
 | 5 | 98.2% | 100.0% | 0.927 | 0.964 | 1 | 51 |
 
 > 数字由 `python -m langgraph_cs.eval.run_eval --stage1 bm25 --mode realistic --write-md` 生成。
