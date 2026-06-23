@@ -22,8 +22,18 @@
   - compile(checkpointer=...)：挂"检查点存储"，让图能按 thread_id 记住每轮状态。
         阶段 3 的 human-in-the-loop（escalation 节点 interrupt/resume）也**依赖**它：
         没有 checkpointer 就无法保存中断点、无法 Command(resume=...) 恢复。
+
+阶段 4 改动：checkpointer 从硬编码 MemorySaver 改为可切换工厂 make_checkpointer()，
+按环境变量 CS_CHECKPOINT=memory|sqlite 选择内存版或 SQLite 持久版（落本地文件，
+进程重启后同一 thread_id 仍记得上文）。build_graph() 也允许外部传入自定义 checkpointer，
+方便评测/测试注入，且默认行为（不传 = 走工厂）不破坏阶段 1/2/3。
 """
+import os
+import sqlite3
+from pathlib import Path
+
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 
 from langgraph_cs.nodes.agent import billing_agent, general_agent, technical_agent
@@ -33,8 +43,52 @@ from langgraph_cs.nodes.rag import rag_node
 from langgraph_cs.nodes.router import route_by_intent
 from langgraph_cs.state import CSState
 
+# SQLite 检查点文件落在 langgraph_cs/data/checkpoints.sqlite（与 chroma 向量库同目录，
+# 都被 .gitignore 忽略，属于本地运行时产物，不入库）。
+_DATA_DIR = Path(__file__).parent / "data"
+DEFAULT_SQLITE_PATH = _DATA_DIR / "checkpoints.sqlite"
 
-def build_graph():
+
+def make_sqlite_checkpointer(db_path: Path = DEFAULT_SQLITE_PATH) -> SqliteSaver:
+    """
+    构造一个**长驻可用**的 SqliteSaver（SQLite 持久化检查点）。
+
+    连接生命周期是这里的关键点（也是最容易踩坑的地方）：
+      - 官方便捷入口 `SqliteSaver.from_conn_string(path)` 是一个**上下文管理器**
+        （`with SqliteSaver.from_conn_string(...) as saver: ...`），离开 with 块连接就关了。
+        它适合"用完即走"的脚本，但**不适合 CLI 长驻进程**——图编译后还要在
+        后续多轮 invoke 里反复读写检查点，连接一旦关闭就用不了了。
+      - 因此长驻场景的正确写法是**自己建并持有 sqlite3 连接**，再交给 SqliteSaver：
+        sqlite3.connect(path, check_same_thread=False) —— check_same_thread=False
+        是因为 LangGraph 可能在不同线程里访问同一个 saver；连接由调用方（main.py）
+        持有到进程结束，不在这里随手关闭。
+    """
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    saver = SqliteSaver(conn)
+    # setup() 建表（checkpoints / writes 等）。重复调用幂等，第一次跑会自动建好库表。
+    saver.setup()
+    return saver
+
+
+def make_checkpointer():
+    """
+    按环境变量 CS_CHECKPOINT 选择检查点存储（工厂方法）。
+
+      - CS_CHECKPOINT=memory（默认）：MemorySaver，进程内存版，零依赖、重启即丢。
+        与阶段 1/2/3 行为完全一致。
+      - CS_CHECKPOINT=sqlite：SqliteSaver，落 data/checkpoints.sqlite，进程重启后
+        同一 thread_id 仍记得上文（见 scripts/verify_persistence.py 的跨进程验证）。
+
+    两种 saver 接口完全一样（都实现 BaseCheckpointSaver），编译/路由/HITL 代码无需区分。
+    """
+    backend = os.getenv("CS_CHECKPOINT", "memory").strip().lower()
+    if backend == "sqlite":
+        return make_sqlite_checkpointer()
+    return MemorySaver()
+
+
+def build_graph(checkpointer=None):
     builder = StateGraph(CSState)
 
     # 前两节点不变：意图识别 -> RAG 检索。
@@ -70,8 +124,9 @@ def build_graph():
     builder.add_edge("general_agent", END)
     builder.add_edge("escalation", END)
 
-    # MemorySaver：进程内存版检查点。零依赖、重启即丢。
-    # 后续阶段可换成 SqliteSaver / RedisSaver 做持久化，接口完全一样。
+    # 检查点存储：不传则走工厂 make_checkpointer()（按 CS_CHECKPOINT 选 memory|sqlite）。
+    # 传了就用调用方给的（评测/测试可注入一个临时 SqliteSaver，不影响默认行为）。
     # human-in-the-loop 的 interrupt/resume 依赖它保存中断点。
-    checkpointer = MemorySaver()
+    if checkpointer is None:
+        checkpointer = make_checkpointer()
     return builder.compile(checkpointer=checkpointer)

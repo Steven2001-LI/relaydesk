@@ -1,0 +1,67 @@
+[
+  {
+    "id": "tech-401",
+    "category": "technical",
+    "question": "登录时弹出来个401错误，这是什么毛病，我该怎么办？"
+  },
+  {
+    "id": "tech-crash",
+    "category": "technical",
+    "question": "App刚一打开就闪退，连首页都进不去，怎么修？"
+  },
+  {
+    "id": "tech-sms",
+    "category": "technical",
+    "question": "短信验证码总是收不到，这该怎么处理？"
+  },
+  {
+    "id": "tech-img",
+    "category": "technical",
+    "question": "文字能正常显示，但是图片全都刷不出来，是哪里的问题？"
+  },
+  {
+    "id": "billing-refund-slow",
+    "category": "billing",
+    "question": "退款发起了一般要等多久钱才能回到我账上？"
+  },
+  {
+    "id": "billing-autopay",
+    "category": "billing",
+    "question": "自动续费连续包月怎么取消掉，别再扣我钱了？"
+  },
+  {
+    "id": "billing-invoice",
+    "category": "billing",
+    "question": "我想报销，能开发票不？是电子的还是纸质的？"
+  },
+  {
+    "id": "billing-double",
+    "category": "billing",
+    "question": "同一个订单被扣了两次款，多扣的那笔怎么退？"
+  },
+  {
+    "id": "billing-coupon",
+    "category": "billing",
+    "question": "有张优惠券但结算的时候死活用不了，是哪里的问题？"
+  },
+  {
+    "id": "general-hours",
+    "category": "general",
+    "question": "你们的人工客服一般几点上班，晚上找得到人吗？"
+  },
+  {
+    "id": "general-points",
+    "category": "general",
+    "question": "买东西怎么才能拿到积分，运费也算积分吗？"
+  },
+  {
+    "id": "general-greeting",
+    "category": "general",
+    "question": "你好呀，你是谁，能帮我做什么？"
+  },
+  {
+    "id": "general-complaint",
+    "category": "general",
+    "question": "我等了快一个小时都没人理我，太让人失望了！"
+  }
+]
