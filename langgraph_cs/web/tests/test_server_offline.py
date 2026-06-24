@@ -26,10 +26,19 @@ from langgraph_cs.web import server
 # 假对象：模拟编译图的 .stream() 与 .get_state()。
 # ─────────────────────────────────────────────────────────────────────────
 class _FakeMsg:
-    """模拟 messages 流里的消息块：只需要 .content。"""
+    """
+    模拟 messages 流里的消息块：需要 .content 与 .id。
 
-    def __init__(self, content):
+    .id 用于复刻 LangGraph 对 agent 节点的"双组消息"重发：
+      · LLM 流式 token：一串共享同一个 id（如 "lc_run--1"）的 chunk；
+      · 节点返回消息被二次重发：另一个 id（普通 UUID）的完整消息。
+    server 端按"本轮第一条 agent 消息 id"去重，只放行第一组，丢弃重发那组。
+    默认 id=None 以兼容旧用例（None 也被当作"首个 id"放行）。
+    """
+
+    def __init__(self, content, id=None):
         self.content = content
+        self.id = id
 
 
 class _FakeStateSnapshot:
@@ -97,11 +106,12 @@ def test_chat_normal_flow():
     """普通一问一答：meta -> rag -> route -> token... -> done。"""
     # 正常 stream 序列：intent 更新、rag 更新、technical_agent 更新 + token 流。
     # 关键：updates 的增量里直接带 intent/confidence 与 retrieved_docs（meta/rag 应从这里取）。
+    # 两个 token chunk 共享同一个流式 id（lc_run--1）—— 模拟 LLM 真实流式生成。
     normal_seq = [
         ("updates", {"intent": {"intent": "technical", "confidence": 0.95}}),
         ("updates", {"rag": {"retrieved_docs": ["如何重置密码\n答案正文…", "登录失败排查\n步骤…"]}}),
-        ("messages", (_FakeMsg("你"), {"langgraph_node": "technical_agent"})),
-        ("messages", (_FakeMsg("好"), {"langgraph_node": "technical_agent"})),
+        ("messages", (_FakeMsg("你", id="lc_run--1"), {"langgraph_node": "technical_agent"})),
+        ("messages", (_FakeMsg("好", id="lc_run--1"), {"langgraph_node": "technical_agent"})),
         ("updates", {"technical_agent": {"messages": ["...AIMessage..."]}}),
     ]
     # 复刻真实 bug 场景：流式 yield update 那一刻，intent/rag 字段尚未落 checkpointer，
@@ -140,6 +150,38 @@ def test_chat_normal_flow():
     done = next(e for e in events if e["type"] == "done")
     assert done["escalated"] is False
     print("✓ /api/chat 正常流：meta/rag/route/token×2/done 顺序与字段正确，token 拼接=", tokens)
+
+
+def test_chat_dedups_resent_agent_message():
+    """
+    回归守护：LangGraph 对 agent 节点的 messages 流会重发节点返回的完整消息，
+    导致答案 ×2。server 按"本轮第一条 agent 消息 id"去重，token 拼接应只出现**一份**答案。
+
+    复刻真实重发：
+      · 第一组 id="lc_run--1" 的两个 chunk（LLM 流式 token）—— 要保留；
+      · 第二组 id="77f5c943-uuid" 的一条完整消息（节点 return 被二次重发）—— 要丢弃。
+    """
+    normal_seq = [
+        ("updates", {"intent": {"intent": "technical", "confidence": 0.95}}),
+        ("updates", {"rag": {"retrieved_docs": []}}),
+        # 第一组：真实流式 token（共享 lc_run--1）。
+        ("messages", (_FakeMsg("你", id="lc_run--1"), {"langgraph_node": "technical_agent"})),
+        ("messages", (_FakeMsg("好", id="lc_run--1"), {"langgraph_node": "technical_agent"})),
+        # 第二组：节点返回消息被 messages 流二次重发（不同 id），整段答案重复一遍 -> 应被丢弃。
+        ("messages", (_FakeMsg("你好", id="77f5c943-uuid"), {"langgraph_node": "technical_agent"})),
+        ("updates", {"technical_agent": {"messages": ["...AIMessage..."]}}),
+    ]
+    state_values = {"intent": None, "confidence": None, "retrieved_docs": [], "escalated": False}
+    fake = FakeGraph(normal_seq=normal_seq, state_values=state_values)
+    client = _make_client(fake)
+
+    resp = client.post("/api/chat", json={"message": "电脑连不上网", "thread_id": "t-dedup"})
+    events = _parse_sse(resp.text)
+    tokens = "".join(e["text"] for e in events if e["type"] == "token")
+    # 去重生效：只放行第一组（lc_run--1）的两个 chunk，重发那条被丢弃 -> 答案只一份。
+    assert tokens == "你好", f"去重后应只出现一份答案，实际={tokens!r}"
+    assert [e["type"] for e in events if e["type"] == "token"].count("token") == 2, tokens
+    print("✓ /api/chat 去重：node 返回消息二次重发被丢弃，token 只拼出一份答案 =", tokens)
 
 
 def test_chat_interrupt_then_resume():
@@ -213,6 +255,7 @@ def _run_all():
     tests = [
         test_index_returns_html,
         test_chat_normal_flow,
+        test_chat_dedups_resent_agent_message,
         test_chat_interrupt_then_resume,
         test_chat_error_event_on_exception,
         test_missing_params_error,

@@ -182,6 +182,18 @@ def _stream_graph(graph_input, config):
     """
     graph = get_graph()
     interrupted = False
+    # ── messages 流去重用的"本轮第一条 agent 消息 id" ──────────────────────────
+    # 为什么要去重？（已用 python 实测确认，非凭记忆）
+    #   LangGraph 对 agent 节点的 messages 流会发出**两组**消息：
+    #     · 一组 AIMessageChunk，msg.id 形如 "lc_run--..."：LLM 真实流式生成的 token（要保留，做打字机）；
+    #     · 另一组 msg.id 是普通 UUID：节点 `return {"messages":[AIMessage(resp.content)]}` 的那条
+    #       完整消息，被 messages 流**二次重发**（多余，会让答案 ×2）。
+    #   （graph.invoke 拿到的最终消息是单份正确的 —— 证明这是纯流式重发，不是模型/节点产了双份。）
+    # 策略：每轮（每次调用 _stream_graph）只转发**第一条**出现的 agent 消息 id 的 token，
+    #   后续其它 id 的同内容重发一律跳过。注意把 None（无 id）也当作"首个 id"，规则才稳健。
+    # 例外说明：resume（坐席回复）走 escalation 节点，是单条 AIMessage（无 LLM 流式），
+    #   只有一个 id，按"第一条 id"规则会被正常发出，不回退。
+    streamed_msg_id = None
     try:
         for mode, chunk in graph.stream(
             graph_input, config=config, stream_mode=["updates", "messages"]
@@ -211,7 +223,13 @@ def _stream_graph(graph_input, config):
                 node = (meta or {}).get("langgraph_node")
                 text = getattr(msg, "content", None)
                 if node in _AGENT_NODES and text:
-                    yield _sse("token", text=text)
+                    # 去重：锁定本轮第一条 agent 消息 id，只放行它的 token；
+                    # 其它 id 是节点返回消息的二次重发（见上方注释），直接丢弃，避免答案 ×2。
+                    mid = getattr(msg, "id", None)
+                    if streamed_msg_id is None:
+                        streamed_msg_id = mid
+                    if mid == streamed_msg_id:
+                        yield _sse("token", text=text)
 
         # 没有中断才发 done（中断时前端在等坐席输入，done 留给 resume 之后发）。
         if not interrupted:
