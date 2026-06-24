@@ -117,7 +117,7 @@ def ensure_dataset(client):
     logger.info("创建 LangSmith 数据集：%s", DATASET_NAME)
     dataset = client.create_dataset(
         DATASET_NAME,
-        description="EchoMind 客服端到端答案质量评测集（技术/账单/通用）。",
+        description="RelayDesk 客服端到端答案质量评测集（技术/账单/通用）。",
     )
     items = load_questions()
     client.create_examples(

@@ -98,8 +98,8 @@ def test_index_returns_html():
     resp = client.get("/")
     assert resp.status_code == 200, resp.status_code
     assert "text/html" in resp.headers["content-type"]
-    assert "EchoMind" in resp.text
-    print("✓ GET / -> 200 + HTML（含 EchoMind 品牌）")
+    assert "RelayDesk" in resp.text
+    print("✓ GET / -> 200 + HTML（含 RelayDesk 品牌）")
 
 
 def test_chat_normal_flow():

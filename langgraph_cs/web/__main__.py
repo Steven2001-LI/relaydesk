@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 def main() -> None:
     host = os.getenv("CS_WEB_HOST", "127.0.0.1")
     port = int(os.getenv("CS_WEB_PORT", "8000"))
-    print(f"EchoMind 客服 Web 演示 ʕ•ᴥ•ʔ  ->  http://{host}:{port}")
+    print(f"RelayDesk 客服 Web 演示 ʕ•ᴥ•ʔ  ->  http://{host}:{port}")
     print("提示：说\"转人工\"可体验 human-in-the-loop（界面暂停 -> 你以坐席身份回复 -> 恢复）")
     # 用字符串路径 "langgraph_cs.web.server:app" 而非直接传 app 对象，
     # 这样 uvicorn 能正确支持（未来如需）reload；这里 reload=False，演示足够。

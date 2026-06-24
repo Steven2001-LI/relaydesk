@@ -54,7 +54,7 @@ def _print_reply(result) -> None:
     reply = result["messages"][-1].content
     tag = "（人工坐席）" if result.get("escalated") else ""
     print(f"\n[意图: {intent} ({confidence:.2f})]")
-    print(f"EchoMind{tag}: {reply}\n")
+    print(f"RelayDesk{tag}: {reply}\n")
 
 
 def main() -> None:
@@ -65,7 +65,7 @@ def main() -> None:
     # thread_id 标识一次会话。同一个 id = 同一段记忆，也是 interrupt/resume 定位中断点的依据。
     config = {"configurable": {"thread_id": "demo-session-1"}}
 
-    print(f"EchoMind (LangGraph 骨架) ʕ•ᴥ•ʔ  [持久化后端: {backend}]  输入 quit/退出 结束")
+    print(f"RelayDesk (LangGraph 骨架) ʕ•ᴥ•ʔ  [持久化后端: {backend}]  输入 quit/退出 结束")
     print("提示：说\"转人工\"可体验 human-in-the-loop（图暂停 -> 你以坐席身份输入 -> 恢复）\n")
     while True:
         try:

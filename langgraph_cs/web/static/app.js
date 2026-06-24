@@ -1,5 +1,5 @@
 /*
-  EchoMind 客服 Web 演示 —— 前端逻辑（原生 JS，无框架 / 无构建链）。
+  RelayDesk 客服 Web 演示 —— 前端逻辑（原生 JS，无框架 / 无构建链）。
 
   做这几件事：
     1) 多轮聊天：维护 thread_id（localStorage 持久），收发消息气泡。

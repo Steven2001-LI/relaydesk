@@ -285,7 +285,7 @@ def _sse_response(generator) -> StreamingResponse:
 # ─────────────────────────────────────────────────────────────────────────
 def build_app() -> FastAPI:
     """构造 FastAPI 应用（抽成函数，方便测试拿到全新实例）。"""
-    app = FastAPI(title="EchoMind LangGraph 客服 Web 演示", docs_url=None, redoc_url=None)
+    app = FastAPI(title="RelayDesk LangGraph 客服 Web 演示", docs_url=None, redoc_url=None)
 
     @app.get("/")
     def index():
