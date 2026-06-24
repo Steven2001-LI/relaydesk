@@ -5,12 +5,16 @@
     1) 多轮聊天：维护 thread_id（localStorage 持久），收发消息气泡。
     2) SSE 流式：POST /api/chat 与 /api/resume 返回 text/event-stream；
        因为 EventSource 只支持 GET，这里用 fetch + ReadableStream 手动解析 SSE。
-    3) signature 决策轨迹 pipeline：把 meta / rag / route / token 事件实时映射到
-       右侧四阶段（意图→检索→路由→应答）的 idle/active/done 点亮；每轮发新消息整条重置。
-       同时把历史决策以紧凑 chips 留痕在每条 Agent 气泡上方（pipeline 只显示当前轮）。
-    4) 轻量安全 markdown：先转义 HTML，再支持 # 标题 / **bold** / 有序·无序列表 / 换行 / `code`。
-    5) HITL 坐席模式：收到 interrupt -> pipeline 转琥珀「转人工」 + 顶部横幅 + 底栏切坐席皮肤；
-       此时发送走 /api/resume，恢复后把坐席回复作为带琥珀标签的 Agent 气泡显示并退出坐席模式。
+    3) signature 决策轨迹 pipeline（调试面板化）：把 meta / rag / route / token 事件实时映射到
+       右侧四阶段的 idle/active/done 点亮（当前步骤高亮、已完成低亮、未开始更弱）；
+       每轮发新消息整条重置。历史决策以紧凑 chips 留痕在每条 Agent 气泡上方。
+    4) 人话映射：技术名集中翻成中文友好词（INTENT_LABEL / AGENT_LABEL 等），
+       技术原值降级为 chip 小字 + title/tooltip，方便演示「可观测」。
+    5) 轻量安全 markdown：先转义 HTML，再支持 # 标题 / **bold** / 有序·无序列表 / 换行 / `code`。
+    6) HITL 坐席模式：收到 interrupt -> pipeline 转琥珀 + 顶部系统条 + 底栏切坐席皮肤；
+       右栏「转人工三段状态」分段呈现 ①AI 已判断 ②等待坐席接入 ③人工回复；
+       发送走 /api/resume，恢复后把坐席回复作为带琥珀标签的 Agent 气泡显示并退出坐席模式。
+    7) 业务操作：结束会话（=重置/清空+新 thread_id）、重新提问（重发上一条用户消息）。
 
   事件协议（与 server.py _stream_graph 对齐，前端绝不改）：
     meta {intent, confidence} · rag {sources[]} · route {agent} · token {text}
@@ -25,6 +29,7 @@ const composerEl = $("#composer");
 const seatBanner = $("#seat-banner");
 const threadPill = $("#thread-pill");
 const newBtn = $("#btn-new");
+const retryBtn = $("#btn-retry");
 
 // 连接状态指示
 const statusEl = $("#status");
@@ -46,23 +51,61 @@ const valueEls = {
 const pipelineEl = $("#pipeline");
 const pipelineHintEl = $("#pipeline-hint");
 
-// 意图 -> emoji，路由节点名 -> 展示名/emoji。纯展示用，识别不到给兜底。
+// 转人工三段状态卡（命中 interrupt / resume 时点亮）
+const seatFlowEl = $("#seat-flow");
+const seatStepEls = {
+  judge: $("#seat-step-judge"),
+  wait: $("#seat-step-wait"),
+  reply: $("#seat-step-reply"),
+};
+const seatReplyTextEl = $("#seat-step-reply-text");
+
+// ════════════════════════════════════════════════════════
+// 人话映射：把技术名翻成中文友好词（集中维护，一处可改）。
+// 技术原值不丢——以小字 / tooltip 形式降级呈现，方便演示「可观测」。
+// ════════════════════════════════════════════════════════
 const INTENT_EMOJI = {
   technical: "🛠️", billing: "💳", complaint: "🙏", greeting: "👋",
   query: "🔎", request: "📝", escalation: "🧑‍💼", other: "💬",
 };
-const AGENT_LABEL = {
-  technical_agent: "🤖 technical_agent",
-  billing_agent: "🤖 billing_agent",
-  general_agent: "🤖 general_agent",
-  escalation: "🧑‍💼 escalation",
+// 意图技术名 -> 中文主词
+const INTENT_LABEL = {
+  technical: "技术支持",
+  billing: "账单咨询",
+  complaint: "投诉处理",
+  greeting: "打招呼",
+  query: "信息查询",
+  request: "业务请求",
+  escalation: "转人工",
+  other: "其他咨询",
 };
+// 路由节点（agent）技术名 -> 中文主词
+const AGENT_LABEL = {
+  technical_agent: "技术支持",
+  billing_agent: "账单客服",
+  general_agent: "通用客服",
+  escalation: "人工坐席",
+};
+const AGENT_EMOJI = {
+  technical_agent: "🛠️", billing_agent: "💳",
+  general_agent: "💬", escalation: "🧑‍💼",
+};
+
+// 置信度数值 -> 高/中/低（人话表达）
+function confidenceLevel(conf) {
+  if (conf == null) return "";
+  const c = Number(conf);
+  if (c >= 0.8) return "高";
+  if (c >= 0.5) return "中";
+  return "低";
+}
 
 // ── 会话状态 ─────────────────────────────────────────────
 const state = {
   threadId: loadThreadId(),
-  seatMode: false,   // 是否处于坐席模式（命中 interrupt 后为 true）
-  busy: false,       // 是否有请求在飞（避免并发发送）
+  seatMode: false,    // 是否处于坐席模式（命中 interrupt 后为 true）
+  busy: false,        // 是否有请求在飞（避免并发发送）
+  lastUserText: "",   // 上一条用户消息（供「重新提问」重发）
 };
 
 function loadThreadId() {
@@ -198,6 +241,14 @@ function createBotMessage({ fromSeat = false } = {}) {
       chips.appendChild(el("span", "chip " + cls, escapeHtml(text)));
       scrollToBottom();
     },
+    // 人话 chip：主词正常字号 + 技术原值降级为小字（tech），并把技术原值放 title 供 hover。
+    addChipCN(cls, { main, tech = "", title = "" } = {}) {
+      const techHtml = tech ? ` <span class="chip-tech">${escapeHtml(tech)}</span>` : "";
+      const node = el("span", "chip " + cls, escapeHtml(main) + techHtml);
+      if (title) node.title = title;
+      chips.appendChild(node);
+      scrollToBottom();
+    },
     appendToken(t) {
       raw += t;
       // 流式期间用纯文本追加（便宜、不闪），完成时再做 markdown 渲染。
@@ -224,9 +275,29 @@ function createBotMessage({ fromSeat = false } = {}) {
   };
 }
 
-function addSeatHint(text) {
-  messagesEl.appendChild(el("div", "seat-hint", escapeHtml(text)));
+// 系统提示：消息流里的细长系统条（左对齐、低调，不居中不大块）。
+function addSysLine(text) {
+  messagesEl.appendChild(el("div", "sys-line", escapeHtml(text)));
   scrollToBottom();
+}
+
+// ── 转人工三段状态卡：① AI 已判断 ② 等待坐席接入 ③ 人工回复 ──
+function seatFlowReset() {
+  seatFlowEl.hidden = true;
+  for (const k of ["judge", "wait", "reply"]) seatStepEls[k].classList.remove("is-on");
+  seatReplyTextEl.textContent = "—";
+}
+// 命中 interrupt：显示卡片，点亮①②（AI 已判断 + 等待坐席接入）。
+function seatFlowEnter() {
+  seatFlowEl.hidden = false;
+  seatStepEls.judge.classList.add("is-on");
+  seatStepEls.wait.classList.add("is-on");
+}
+// 坐席回复落地：点亮③并填入内容。
+function seatFlowReply(text) {
+  seatStepEls.wait.classList.remove("is-on"); // 等待结束
+  seatStepEls.reply.classList.add("is-on");
+  seatReplyTextEl.textContent = text || "（已回复）";
 }
 
 // ════════════════════════════════════════════════════════
@@ -274,8 +345,9 @@ function pipelineToSeat() {
   for (const name of STAGE_ORDER) {
     if (stageEls[name].classList.contains("is-active")) setStage(name, "done");
   }
-  setStage("answer", "seat", "等待坐席接管");
-  pipelineHintEl.textContent = "已转人工 · human-in-the-loop";
+  setStage("answer", "seat", "等待坐席接入");
+  // 人话主词在前，技术名 human-in-the-loop 降级为括注小字。
+  pipelineHintEl.textContent = "需要人工介入 · human-in-the-loop";
 }
 
 // ── SSE 解析：把 fetch 的字节流按 `\n\n` 切成事件，回调每条 JSON ──
@@ -344,35 +416,48 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
         case "meta": {
           if (evt.intent) {
             const emoji = INTENT_EMOJI[evt.intent] || "🎯";
-            const conf = (evt.confidence != null) ? " " + Number(evt.confidence).toFixed(2) : "";
-            // pipeline ①：意图识别
-            advancePipeline("intent", `${evt.intent}${conf}`);
-            // 历史留痕 chip
-            bot.addChip("chip-intent", `${emoji} ${evt.intent}${conf}`);
+            const cn = INTENT_LABEL[evt.intent] || evt.intent;
+            const lvl = confidenceLevel(evt.confidence);
+            const raw = (evt.confidence != null) ? Number(evt.confidence).toFixed(2) : "";
+            // pipeline ①：意图识别 —— 人话主词 + 置信度小字
+            advancePipeline("intent", lvl ? `${cn} · 置信 ${raw}` : cn);
+            // 历史留痕 chip：主词「转人工意图：高」式表达，技术原值降级小字 + hover
+            const main = lvl ? `${emoji} ${cn}：${lvl}` : `${emoji} ${cn}`;
+            bot.addChipCN("chip-intent", {
+              main,
+              tech: raw,
+              title: `intent=${evt.intent}${raw ? ` confidence=${raw}` : ""}`,
+            });
           }
           break;
         }
         case "rag": {
           const sources = evt.sources || [];
-          // pipeline ②：知识检索（命中数 / 标题）
+          // pipeline ②：知识库检索（命中数 / 标题）
           if (sources.length) {
-            advancePipeline("rag", `${sources.length} 条 · ${sources[0]}`);
-            bot.addChip("chip-rag", "📚 " + sources.join(" · "));
+            const first = String(sources[0]).split("\n")[0];
+            advancePipeline("rag", `命中 ${sources.length} 条 · ${first}`);
+            bot.addChipCN("chip-rag", {
+              main: `📚 知识库检索：${sources.length} 条`,
+              title: "rag · " + sources.map((s) => String(s).split("\n")[0]).join(" · "),
+            });
           } else {
-            advancePipeline("rag", "无命中");
+            advancePipeline("rag", "未命中");
           }
           break;
         }
         case "route": {
           if (evt.agent) {
-            // pipeline ③：路由
-            advancePipeline("route", evt.agent);
-            if (AGENT_LABEL[evt.agent]) bot.addChip("chip-route", AGENT_LABEL[evt.agent]);
+            // pipeline ③：路由分发 —— 中文 agent 名 + 技术名 hover
+            const cn = AGENT_LABEL[evt.agent] || evt.agent;
+            advancePipeline("route", cn);
+            const emoji = AGENT_EMOJI[evt.agent] || "🤖";
+            bot.addChipCN("chip-route", { main: `${emoji} ${cn}`, title: "agent=" + evt.agent });
           }
           break;
         }
         case "token":
-          // 第一个 token -> 点亮④（应答中）
+          // 第一个 token -> 点亮④（生成应答中）
           if (!answered) {
             answered = true;
             advancePipeline("answer", "应答中…");
@@ -381,11 +466,12 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
           break;
         case "interrupt":
           interrupted = true;
-          if (!bot.hasText()) bot.setText("（已转人工，等待坐席接管…）");
+          if (!bot.hasText()) bot.setText("（已转人工，等待坐席接入…）");
           bot.finish();
           pipelineToSeat();
+          seatFlowEnter();           // 三段状态卡：点亮 ① AI 已判断 + ② 等待坐席接入
           enterSeatMode(evt.prompt);
-          addSeatHint("🧑‍💼 " + (evt.prompt || "请以坐席身份回复用户"));
+          addSysLine(evt.prompt || "已转人工，请以坐席身份回复用户");
           break;
         case "done":
           bot.finish();
@@ -393,7 +479,7 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
           if (isResume) {
             completeStage("answer", "坐席已回复");
           } else if (answered) {
-            completeStage("answer", evt.escalated ? "已转人工" : "完成");
+            completeStage("answer", evt.escalated ? "已转人工" : "已完成");
           }
           break;
         case "error":
@@ -417,6 +503,9 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
 // ── 发送（普通用户消息）──────────────────────────────────
 async function sendUserMessage(text) {
   resetPipeline();            // 新一轮：整条 pipeline 重置为 idle
+  seatFlowReset();            // 清掉上一轮的转人工三段卡
+  state.lastUserText = text;  // 记下用于「重新提问」
+  updateRetryBtn();
   addUserMessage(text);
   const bot = createBotMessage();
   const { interrupted } = await runStream(
@@ -432,7 +521,8 @@ async function sendSeatReply(text) {
   // 坐席的话以"输入"显示在右侧，让演示看到坐席输了什么。
   addUserMessage(text);
   const bot = createBotMessage({ fromSeat: true });
-  bot.addChip("chip-seat", AGENT_LABEL.escalation + " · 人工坐席");
+  bot.addChipCN("chip-seat", { main: "🧑‍💼 人工坐席", title: "agent=escalation" });
+  seatFlowReply(text);        // 三段状态卡：点亮 ③ 人工回复 + 填入内容
   await runStream(
     "/api/resume",
     { thread_id: state.threadId, seat_reply: text },
@@ -441,6 +531,11 @@ async function sendSeatReply(text) {
   );
   exitSeatMode();
   setStatus(null, "就绪");
+}
+
+// 「重新提问」可用性：有上一条用户消息、非坐席模式、非忙时可点。
+function updateRetryBtn() {
+  retryBtn.disabled = state.busy || state.seatMode || !state.lastUserText;
 }
 
 // ── 输入框统一提交入口 ───────────────────────────────────
@@ -466,6 +561,7 @@ function setBusy(b) {
   state.busy = b;
   sendBtn.disabled = b;
   inputEl.disabled = b;
+  updateRetryBtn();
   if (b) {
     setStatus("busy", "推理中");
   } else if (!state.seatMode) {
@@ -480,24 +576,42 @@ function autoGrow() {
   inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + "px";
 }
 
-// ── 新会话：重置 thread_id + 清空对话 + 退出坐席模式 + 重置 pipeline ──
+// ── 结束会话：重置 thread_id + 清空对话 + 退出坐席模式 + 重置 pipeline / 三段卡 ──
+//   （等价于「新会话」：是可用的业务操作，把当前会话清空、开启新 thread_id）
 function resetSession() {
   state.threadId = newThreadId();
   localStorage.setItem("echomind_thread_id", state.threadId);
+  state.lastUserText = "";
   exitSeatMode();
   resetPipeline();
+  seatFlowReset();
   setStatus(null, "就绪");
   // 保留开场气泡（第一条），清掉其余
   while (messagesEl.children.length > 1) {
     messagesEl.removeChild(messagesEl.lastChild);
   }
   renderThreadPill();
+  updateRetryBtn();
   inputEl.focus();
+}
+
+// ── 重新提问：重发上一条用户消息（坐席模式 / 忙时禁用） ──
+async function onRetry() {
+  if (state.busy || state.seatMode || !state.lastUserText) return;
+  const text = state.lastUserText;
+  setBusy(true);
+  try {
+    await sendUserMessage(text);
+  } finally {
+    setBusy(false);
+    inputEl.focus();
+  }
 }
 
 // ── 事件绑定 ─────────────────────────────────────────────
 sendBtn.addEventListener("click", onSubmit);
 newBtn.addEventListener("click", resetSession);
+retryBtn.addEventListener("click", onRetry);
 inputEl.addEventListener("input", autoGrow);
 inputEl.addEventListener("keydown", (e) => {
   // Enter 发送，Shift+Enter 换行
@@ -510,4 +624,6 @@ inputEl.addEventListener("keydown", (e) => {
 // 初始化
 renderThreadPill();
 resetPipeline();
+seatFlowReset();
+updateRetryBtn();
 inputEl.focus();

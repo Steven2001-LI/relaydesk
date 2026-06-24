@@ -35,14 +35,15 @@
           <span class="status-text" id="status-text">就绪</span>
         </span>
         <span class="thread-pill" id="thread-pill" title="当前会话 thread_id">会话 —</span>
-        <button class="btn-ghost" id="btn-new" title="清空对话并开启新 thread_id">＋ 新会话</button>
+        <button class="btn-ghost" id="btn-new" title="结束当前会话并开启新 thread_id">结束会话</button>
       </div>
     </header>
 
-    <!-- 转人工横幅（默认隐藏，命中 interrupt 时显示） -->
+    <!-- 转人工系统条（默认隐藏，命中 interrupt 时显示）。
+         低调细长、左对齐，不喧宾夺主。 -->
     <div class="seat-banner" id="seat-banner" hidden>
-      <span class="seat-banner-icon" aria-hidden="true">🧑‍💼</span>
-      <span class="seat-banner-text">已转人工 · 请以<strong>坐席</strong>身份回复用户</span>
+      <span class="seat-banner-dot" aria-hidden="true"></span>
+      <span class="seat-banner-text">已转人工 · 请以坐席身份回复用户</span>
     </div>
 
     <!-- ── 主体：左对话区 + 右决策轨迹 ── -->
@@ -62,18 +63,26 @@
 
         <!-- 底部输入区 -->
         <footer class="composer" id="composer">
-          <textarea
-            id="input"
-            class="input"
-            rows="1"
-            placeholder="输入消息，Enter 发送 · Shift+Enter 换行"
-            autocomplete="off"
-          ></textarea>
-          <button class="btn-send" id="btn-send" aria-label="发送">
-            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-              <path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3 10l12 2-12 2z" />
-            </svg>
-          </button>
+          <div class="composer-row">
+            <textarea
+              id="input"
+              class="input"
+              rows="1"
+              placeholder="输入消息，Enter 发送 · Shift+Enter 换行"
+              autocomplete="off"
+            ></textarea>
+            <button class="btn-send" id="btn-send" aria-label="发送">
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                <path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3 10l12 2-12 2z" />
+              </svg>
+            </button>
+          </div>
+          <!-- 业务操作（克制次要样式）：重新提问=重发上一条用户消息 -->
+          <div class="composer-tools">
+            <button class="btn-tool" id="btn-retry" type="button" title="重发上一条用户消息" disabled>
+              重新提问
+            </button>
+          </div>
         </footer>
       </section>
 
@@ -104,7 +113,7 @@
               <span class="stage-line"></span>
             </div>
             <div class="stage-body">
-              <span class="stage-label">知识检索</span>
+              <span class="stage-label">知识库检索</span>
               <span class="stage-value" id="value-rag">待命</span>
             </div>
           </li>
@@ -116,7 +125,7 @@
               <span class="stage-line"></span>
             </div>
             <div class="stage-body">
-              <span class="stage-label">路由</span>
+              <span class="stage-label">路由分发</span>
               <span class="stage-value" id="value-route">待命</span>
             </div>
           </li>
@@ -127,11 +136,31 @@
               <span class="stage-node"><span class="stage-idx">4</span></span>
             </div>
             <div class="stage-body">
-              <span class="stage-label">应答</span>
+              <span class="stage-label">生成应答</span>
               <span class="stage-value" id="value-answer">待命</span>
             </div>
           </li>
         </ol>
+
+        <!-- 转人工三段状态（默认隐藏，命中 interrupt / resume 时分段显示）。
+             ① AI 已判断：需要人工 ② 系统状态：等待坐席接入 ③ 人工回复：<内容> -->
+        <div class="seat-flow" id="seat-flow" hidden>
+          <div class="seat-flow-title">转人工进度</div>
+          <ol class="seat-steps">
+            <li class="seat-step" id="seat-step-judge">
+              <span class="seat-step-tag">AI 已判断</span>
+              <span class="seat-step-text">需要人工介入</span>
+            </li>
+            <li class="seat-step" id="seat-step-wait">
+              <span class="seat-step-tag">系统状态</span>
+              <span class="seat-step-text">等待坐席接入</span>
+            </li>
+            <li class="seat-step" id="seat-step-reply">
+              <span class="seat-step-tag">人工回复</span>
+              <span class="seat-step-text" id="seat-step-reply-text">—</span>
+            </li>
+          </ol>
+        </div>
 
         <p class="pipeline-foot">
           每轮对话实时呈现 <code>intent → rag → route → answer</code>
