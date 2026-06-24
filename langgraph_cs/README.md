@@ -53,7 +53,9 @@ python -m langgraph_cs.main
 
 CLI 之外加了一个**可演示的 Web 聊天界面**：FastAPI 把同一张图（`build_graph()`）包成 HTTP 接口 + 原生
 HTML/JS 单页（无 Node/构建链）。代码全在 `langgraph_cs/web/`，**只做适配层，不改图/节点/state 核心逻辑**。
-面试时直接打开浏览器演示，比 CLI 直观：边打字边出字、每条回复带「意图 / 路由 / 知识库来源」标签、转人工时
+视觉走「**Agent 控制台 / 可观测**」深色工程风（靛蓝 + 青 + 暖白，Space Grotesk / Inter / JetBrains Mono 字体）：
+左侧对话区、右侧「**决策轨迹**」pipeline——意图 → 检索 → 路由 → 应答 四阶段随 SSE 事件**实时点亮+发光**，
+把 Agent 内部决策做成界面 signature；窄屏折叠为对话上方横向条。转人工时整条 pipeline 与输入框切琥珀，
 界面真的暂停等坐席输入。
 
 ```bash
@@ -67,8 +69,12 @@ python -m langgraph_cs.web
 
 演示要点：
 
-- **决策可视化**：每条机器人消息上方一行小标签 chips —— 🎯 意图(含置信度)、🤖 路由到的 Agent、📚 引用的知识库条目。
-- **流式打字机**：DeepSeek 的 token 经 SSE 逐字追加（`stream_mode=["updates","messages"]` 同时拿节点状态更新 + LLM token）。
+- **决策轨迹 pipeline（signature）**：右侧四阶段 ① 意图识别 ② 知识检索 ③ 路由 ④ 应答，随每轮 SSE 事件实时
+  点亮（active 青色发光 / done 靛蓝打勾 / 连接线充能），每次发新消息整条重置；历史轮决策以紧凑 chips 留痕在
+  对应 Agent 气泡上方（🎯 意图含置信度、🤖 路由到的 Agent、📚 引用的知识库条目）。
+- **流式打字机 + 轻量 markdown**：DeepSeek 的 token 经 SSE 逐字追加（`stream_mode=["updates","messages"]` 同时拿
+  节点状态更新 + LLM token），收尾时对回答做**安全**的轻量 markdown 渲染（先转义、再支持 **加粗** / 有序·无序列表
+  / 换行 / `code`，不引第三方库）。
 - **转人工（human-in-the-loop）**：说一句「转人工」，界面顶部弹出「🧑‍💼 已转人工」横幅、底部输入框切坐席皮肤，
   你以坐席身份输入并发送 → 走 `/api/resume`（`Command(resume=...)`）恢复图 → 坐席回复作为机器人消息显示并退出坐席模式。
 - **多轮 / 新会话**：thread_id 存 localStorage 维持多轮；右上角「新会话」按钮重置 thread_id 清空对话。

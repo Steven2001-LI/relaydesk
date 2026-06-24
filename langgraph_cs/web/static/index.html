@@ -3,61 +3,141 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EchoMind · LangGraph 智能客服</title>
+  <title>EchoMind · LangGraph 多 Agent 智能客服</title>
+
+  <!-- 字体：Space Grotesk(标题) + Inter(正文) + JetBrains Mono(数据/标签)。
+       preconnect 先建连接，display=swap 避免字体阻塞首屏。 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet"
+  />
+
   <link rel="stylesheet" href="/static/style.css" />
-  <!-- 用一个内联 SVG 作 favicon，避免额外文件 / 404 -->
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐻</text></svg>" />
+  <!-- 内联 SVG favicon，避免额外文件 / 404 -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='86'>🐻</text></svg>" />
 </head>
 <body>
   <div class="app">
-    <!-- 顶部品牌栏 -->
+    <!-- ── 顶部品牌栏 ── -->
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark">ʕ•ᴥ•ʔ</span>
+        <span class="brand-mark" aria-hidden="true">ʕ•ᴥ•ʔ</span>
         <div class="brand-text">
           <span class="brand-name">EchoMind</span>
-          <span class="brand-sub">LangGraph 智能客服 · 决策可视化演示</span>
+          <span class="brand-sub">LangGraph 多 Agent 智能客服 · 决策可观测</span>
         </div>
       </div>
       <div class="topbar-actions">
+        <span class="status" id="status" title="服务连接状态">
+          <span class="status-dot" id="status-dot"></span>
+          <span class="status-text" id="status-text">就绪</span>
+        </span>
         <span class="thread-pill" id="thread-pill" title="当前会话 thread_id">会话 —</span>
-        <button class="btn-ghost" id="btn-new" title="清空对话并开启新 thread_id">新会话</button>
+        <button class="btn-ghost" id="btn-new" title="清空对话并开启新 thread_id">＋ 新会话</button>
       </div>
     </header>
 
     <!-- 转人工横幅（默认隐藏，命中 interrupt 时显示） -->
     <div class="seat-banner" id="seat-banner" hidden>
-      <span class="seat-banner-icon">🧑‍💼</span>
+      <span class="seat-banner-icon" aria-hidden="true">🧑‍💼</span>
       <span class="seat-banner-text">已转人工 · 请以<strong>坐席</strong>身份回复用户</span>
     </div>
 
-    <!-- 消息列表 -->
-    <main class="messages" id="messages">
-      <!-- 开场提示气泡 -->
-      <div class="msg msg-bot">
-        <div class="bubble">
-          你好，我是 EchoMind 智能客服 ʕ•ᴥ•ʔ<br />
-          试试问技术或账单问题，看每条回复上方的<strong>意图 / 路由 / 知识库来源</strong>标签；
-          说一句「<em>转人工</em>」可体验界面暂停 + 坐席接管。
-        </div>
-      </div>
-    </main>
+    <!-- ── 主体：左对话区 + 右决策轨迹 ── -->
+    <div class="layout">
+      <!-- 左：对话区 -->
+      <section class="chat" aria-label="对话区">
+        <main class="messages" id="messages">
+          <!-- 开场提示气泡 -->
+          <div class="msg msg-bot">
+            <div class="bubble">
+              你好，我是 EchoMind 智能客服 ʕ•ᴥ•ʔ<br />
+              问我技术或账单问题，右侧「<strong>决策轨迹</strong>」会随我思考实时点亮：意图 → 检索 → 路由 → 应答。<br />
+              说一句「<em>转人工</em>」可体验界面暂停 + 坐席接管。
+            </div>
+          </div>
+        </main>
 
-    <!-- 底部输入区 -->
-    <footer class="composer" id="composer">
-      <textarea
-        id="input"
-        class="input"
-        rows="1"
-        placeholder="输入消息，Enter 发送 / Shift+Enter 换行"
-        autocomplete="off"
-      ></textarea>
-      <button class="btn-send" id="btn-send" aria-label="发送">
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-          <path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3 10l12 2-12 2z" />
-        </svg>
-      </button>
-    </footer>
+        <!-- 底部输入区 -->
+        <footer class="composer" id="composer">
+          <textarea
+            id="input"
+            class="input"
+            rows="1"
+            placeholder="输入消息，Enter 发送 · Shift+Enter 换行"
+            autocomplete="off"
+          ></textarea>
+          <button class="btn-send" id="btn-send" aria-label="发送">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3 10l12 2-12 2z" />
+            </svg>
+          </button>
+        </footer>
+      </section>
+
+      <!-- 右：决策轨迹侧栏（signature）。窄屏时折叠为对话上方横向条。 -->
+      <aside class="pipeline" id="pipeline" aria-label="决策轨迹">
+        <div class="pipeline-head">
+          <span class="pipeline-title">决策轨迹</span>
+          <span class="pipeline-hint" id="pipeline-hint">本轮 Agent 内部决策</span>
+        </div>
+
+        <ol class="stages" id="stages">
+          <!-- ① 意图识别 -->
+          <li class="stage" data-stage="intent" id="stage-intent">
+            <div class="stage-rail" aria-hidden="true">
+              <span class="stage-node"><span class="stage-idx">1</span></span>
+              <span class="stage-line"></span>
+            </div>
+            <div class="stage-body">
+              <span class="stage-label">意图识别</span>
+              <span class="stage-value" id="value-intent">待命</span>
+            </div>
+          </li>
+
+          <!-- ② 知识检索 -->
+          <li class="stage" data-stage="rag" id="stage-rag">
+            <div class="stage-rail" aria-hidden="true">
+              <span class="stage-node"><span class="stage-idx">2</span></span>
+              <span class="stage-line"></span>
+            </div>
+            <div class="stage-body">
+              <span class="stage-label">知识检索</span>
+              <span class="stage-value" id="value-rag">待命</span>
+            </div>
+          </li>
+
+          <!-- ③ 路由 -->
+          <li class="stage" data-stage="route" id="stage-route">
+            <div class="stage-rail" aria-hidden="true">
+              <span class="stage-node"><span class="stage-idx">3</span></span>
+              <span class="stage-line"></span>
+            </div>
+            <div class="stage-body">
+              <span class="stage-label">路由</span>
+              <span class="stage-value" id="value-route">待命</span>
+            </div>
+          </li>
+
+          <!-- ④ 应答 -->
+          <li class="stage" data-stage="answer" id="stage-answer">
+            <div class="stage-rail" aria-hidden="true">
+              <span class="stage-node"><span class="stage-idx">4</span></span>
+            </div>
+            <div class="stage-body">
+              <span class="stage-label">应答</span>
+              <span class="stage-value" id="value-answer">待命</span>
+            </div>
+          </li>
+        </ol>
+
+        <p class="pipeline-foot">
+          每轮对话实时呈现 <code>intent → rag → route → answer</code>
+        </p>
+      </aside>
+    </div>
   </div>
 
   <script src="/static/app.js"></script>
