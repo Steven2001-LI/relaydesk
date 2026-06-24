@@ -103,6 +103,13 @@ function confidenceLevel(conf) {
   return "低";
 }
 
+// localStorage 里存 thread_id 的 key（新 key + 旧版兼容 key）。
+// ⚠️ 必须声明在 loadThreadId() 调用之前：下面 state 初始化时就会调用 loadThreadId()，
+//    它引用这两个 const；若声明在后，会触发 const 暂时性死区(TDZ) 的 ReferenceError，
+//    导致整段 app.js 在此中断、所有事件绑定都不执行（表现为"按钮/回车没反应"）。
+const THREAD_STORAGE_KEY = "relaydesk_thread_id";
+const LEGACY_THREAD_STORAGE_KEY = "echomind_thread_id";
+
 // ── 会话状态 ─────────────────────────────────────────────
 const state = {
   threadId: loadThreadId(),
@@ -110,9 +117,6 @@ const state = {
   busy: false,        // 是否有请求在飞（避免并发发送）
   lastUserText: "",   // 上一条用户消息（供「重新提问」重发）
 };
-
-const THREAD_STORAGE_KEY = "relaydesk_thread_id";
-const LEGACY_THREAD_STORAGE_KEY = "echomind_thread_id";
 
 function loadThreadId() {
   let id = localStorage.getItem(THREAD_STORAGE_KEY);
