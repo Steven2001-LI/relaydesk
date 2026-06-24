@@ -114,12 +114,13 @@ def _intent_meta(graph, config, delta=None) -> dict:
 
 def _rag_sources(graph, config, delta=None) -> list:
     """
-    rag 节点跑完后，尽力给出"引用了哪些知识库条目"。
+    rag 节点跑完后，给出"引用了哪些知识库条目"——返回稳定的条目 item_id 列表。
 
-    诚实说明：rag_node 往 state 只写**纯文本** retrieved_docs（不带 item_id），
-    所以这里拿不到稳定的条目 id。做法：取每条检索文本的首行（FAQ 的标题问题）做简短摘要，
-    既能在前端 chips 上展示"引用了什么"，又不谎称有 id。没有检索结果就返回空列表。
-    （若日后 rag_node 改为往 state 写 item_id，这里优先用 id 即可，无需改前端。）
+    rag_node 现在往 state 写**结构化**条目（list[dict]，每条含 item_id/source/text/score，
+    见 nodes/rag.py 与 state.py）。这里优先取稳定的 item_id（形如 "billing-03"）作为来源标识，
+    不再截 text 首行——前端据此在 tooltip 里列条目 id。
+    兼容兜底：万一某条缺 item_id（理论上不会），退而取 source；再不行才截 text 首行。
+    没有检索结果就返回空列表。
 
     取值同样优先 delta（updates 增量里直接含 rag 节点写的 retrieved_docs），理由同 _intent_meta：
     流式 yield 的瞬间状态未落 checkpointer，从增量读才稳；取不到再回退 get_state。
@@ -131,12 +132,17 @@ def _rag_sources(graph, config, delta=None) -> list:
         docs = values.get("retrieved_docs") or []
     sources = []
     for doc in docs:
-        text = (doc or "").strip()
-        if not text:
+        if not isinstance(doc, dict):
             continue
-        # 取首行作为来源摘要，超长截断，避免 chip 过长。
-        head = text.splitlines()[0].strip()
-        sources.append(head[:24] + ("…" if len(head) > 24 else ""))
+        # 优先用稳定的 item_id；缺失时降级到 source；都没有再截 text 首行兜底。
+        label = doc.get("item_id") or doc.get("source")
+        if not label:
+            text = (doc.get("text") or "").strip()
+            if not text:
+                continue
+            head = text.splitlines()[0].strip()
+            label = head[:24] + ("…" if len(head) > 24 else "")
+        sources.append(label)
     return sources
 
 
@@ -182,6 +188,16 @@ def _stream_graph(graph_input, config):
     """
     graph = get_graph()
     interrupted = False
+    # ── route 事件"只发一次、且尽早发"的标记 ───────────────────────────────────
+    # 为什么需要它？（已用 langgraph 实测确认，非凭记忆）
+    #   route 表示"路由落到了哪个专职 Agent"。原先它只在 updates 分支（agent 节点的
+    #   state 更新到达）才发；但 messages 流的**第一个 token** 往往**先于**那条 update 到达，
+    #   导致前端"路由"步骤点亮晚于"应答"步骤，观感是先答后路由。
+    # 改进：在 messages 分支里，一旦识别出第一个专职 Agent 节点产出的 token
+    #   （metadata 的 langgraph_node ∈ _AGENT_NODES），若 route 尚未发过，就**先**补发一个
+    #   route 事件（agent=该 node），再发该 token。updates 分支则只在 route 还没发过时才发，
+    #   二者择一、只发一次（用 route_sent 标记互斥）。
+    route_sent = False
     # ── messages 流去重用的"本轮第一条 agent 消息 id" ──────────────────────────
     # 为什么要去重？（已用 python 实测确认，非凭记忆）
     #   LangGraph 对 agent 节点的 messages 流会发出**两组**消息：
@@ -215,14 +231,24 @@ def _stream_graph(graph_input, config):
                     elif node_name == "rag":
                         yield _sse("rag", sources=_rag_sources(graph, config, delta=delta))
                     elif node_name in _AGENT_NODES:
-                        # 专职 Agent 节点开始产出 -> 这就是路由落点。
-                        yield _sse("route", agent=node_name)
+                        # 专职 Agent 节点的 state 更新到达 -> 这就是路由落点。
+                        # 但若该节点的第一个 token 已先一步在 messages 分支里发过 route，
+                        # 这里就不再重复发（route_sent 互斥，保证只发一次）。
+                        if not route_sent:
+                            route_sent = True
+                            yield _sse("route", agent=node_name)
             elif mode == "messages":
                 # chunk: (消息块, metadata)。只转发专职 Agent 节点产生的增量正文。
                 msg, meta = chunk
                 node = (meta or {}).get("langgraph_node")
                 text = getattr(msg, "content", None)
                 if node in _AGENT_NODES and text:
+                    # 关键时机修正：messages 的第一个 agent token 往往先于 updates 那条
+                    # 节点 state 更新到达。若 route 还没发过，**先**补发 route（agent=该 node），
+                    # 再发 token —— 这样前端"路由"步骤不会晚于"应答"步骤点亮。只发一次。
+                    if not route_sent:
+                        route_sent = True
+                        yield _sse("route", agent=node)
                     # 去重：锁定本轮第一条 agent 消息 id，只放行它的 token；
                     # 其它 id 是节点返回消息的二次重发（见上方注释），直接丢弃，避免答案 ×2。
                     mid = getattr(msg, "id", None)

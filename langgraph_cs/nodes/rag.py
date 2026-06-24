@@ -14,7 +14,12 @@ agent_node 再把这些文档拼进上下文作答。
 
 节点契约：
   输入：state（读 intent + messages）
-  输出：{"retrieved_docs": [文档文本, ...]}  —— 只返回要更新的字段
+  输出：{"retrieved_docs": [条目 dict, ...]}  —— 只返回要更新的字段
+        每个条目 dict 形如 {"item_id", "source", "text", "score"}（见 state.py 说明）：
+          - item_id / source 取自 chunk 的 metadata；
+          - text 是条目正文（agent 拼上下文用）；
+          - score 是 rerank 的 relevance_score，朴素检索无分数时为 None。
+        这样下游（agent / web 层 / 评测）拿得到稳定的条目标识与分数，不必再截文本首行当来源。
 """
 import logging
 import os
@@ -42,6 +47,23 @@ def _rerank_enabled() -> bool:
     """
     val = os.getenv("RAG_USE_RERANK", "1").strip().lower()
     return val not in ("0", "false", "no", "off", "")
+
+
+def _doc_entry(hit, score) -> dict:
+    """
+    把一个检索到的 LangChain Document 转成结构化条目 dict。
+
+    item_id / source 取自 chunk 的 metadata（灌库时写入，见 rag/store.py）；
+    text 是条目正文；score 是 rerank 的 relevance_score（朴素检索无分数时传 None）。
+    metadata 缺字段时降级为 None，绝不抛错。
+    """
+    meta = getattr(hit, "metadata", None) or {}
+    return {
+        "item_id": meta.get("item_id"),
+        "source": meta.get("source"),
+        "text": hit.page_content,
+        "score": score,
+    }
 
 
 def rag_node(state) -> dict:
@@ -75,16 +97,16 @@ def rag_node(state) -> dict:
             doc_texts = [h.page_content for h in hits]
             ranked = rerank(query, doc_texts, top_n=_RERANK_TOP_N)
             # rerank 返回 (原始下标 index, 分数, 文本)，已按分数降序。
-            # 用 index 映射回原 hits 取文本（比用返回文本更稳，且能保留映射关系，
-            # 评测脚本同样靠 index 回查 metadata.source）。本节点只往 state 写纯文本。
-            docs = [hits[idx].page_content for idx, _score, _text in ranked]
+            # 用 index 映射回原 hits 取条目（比用返回文本更稳，且能保留 metadata 映射，
+            # 评测脚本同样靠 index 回查 item_id/source）。把 relevance_score 一并写进结构化条目。
+            docs = [_doc_entry(hits[idx], score) for idx, score, _text in ranked]
             logger.info("rag 检索 %d 条 → rerank 取 %d 条（intent=%s）",
                         len(hits), len(docs), intent)
             return {"retrieved_docs": docs}
         except Exception as ex:  # noqa: BLE001 rerank 失败降级为粗排，不丢检索结果
             logger.warning("rerank 失败，降级为用粗排结果：%s", ex)
 
-    # 朴素检索（不 rerank）：直接用粗排 top-k 文本。
-    docs = [h.page_content for h in hits]
+    # 朴素检索（不 rerank）：直接用粗排 top-k 条目，无 rerank 分数故 score=None。
+    docs = [_doc_entry(h, None) for h in hits]
     logger.info("rag 检索 %d 条（朴素，intent=%s）", len(docs), intent)
     return {"retrieved_docs": docs}

@@ -25,8 +25,13 @@ class CSState(TypedDict):
     # 意图置信度（0~1）。教学版先放着，阶段 3 做"低置信度转人工"时会用到。
     confidence: Optional[float]
 
-    # RAG 检索到的参考文档文本列表（rag_node 写入，agent_node 读取拼进上下文）。
-    # greeting/other 意图早退时为空列表 []，表示"本轮不检索"。
+    # RAG 检索到的**结构化**参考条目列表（rag_node 写入，agent_node 读取拼进上下文）。
+    # 每条是一个 dict：
+    #   {"item_id": <str|None>, "source": <str|None>, "text": <str>, "score": <float|None>}
+    #   - item_id / source 来自 chunk 的 metadata（条目级标识 / 来源文件名）；
+    #   - text 是该条目的正文（agent_node 用它拼上下文，web 层用 item_id 做来源 chip）；
+    #   - score 是 rerank 的 relevance_score；朴素检索（不 rerank）无分数时为 None。
+    # greeting/other 意图早退、检索 0 条或检索失败降级时均为空列表 []，表示"本轮无可用参考"。
     retrieved_docs: list
 
     # 是否走了"转人工"（human-in-the-loop）。escalation_node 在拿到人工回复后置 True，

@@ -107,9 +107,16 @@ def test_chat_normal_flow():
     # 正常 stream 序列：intent 更新、rag 更新、technical_agent 更新 + token 流。
     # 关键：updates 的增量里直接带 intent/confidence 与 retrieved_docs（meta/rag 应从这里取）。
     # 两个 token chunk 共享同一个流式 id（lc_run--1）—— 模拟 LLM 真实流式生成。
+    # retrieved_docs 现在是**结构化条目**（list[dict]，含 item_id/source/text/score），
+    # rag 事件的 sources 应取稳定的 item_id（不再截 text 首行）。
     normal_seq = [
         ("updates", {"intent": {"intent": "technical", "confidence": 0.95}}),
-        ("updates", {"rag": {"retrieved_docs": ["如何重置密码\n答案正文…", "登录失败排查\n步骤…"]}}),
+        ("updates", {"rag": {"retrieved_docs": [
+            {"item_id": "account-01", "source": "account.md",
+             "text": "如何重置密码\n答案正文…", "score": 0.97},
+            {"item_id": "account-02", "source": "account.md",
+             "text": "登录失败排查\n步骤…", "score": 0.81},
+        ]}}),
         ("messages", (_FakeMsg("你", id="lc_run--1"), {"langgraph_node": "technical_agent"})),
         ("messages", (_FakeMsg("好", id="lc_run--1"), {"langgraph_node": "technical_agent"})),
         ("updates", {"technical_agent": {"messages": ["...AIMessage..."]}}),
@@ -142,14 +149,60 @@ def test_chat_normal_flow():
     meta = next(e for e in events if e["type"] == "meta")
     assert meta["intent"] == "technical" and meta["confidence"] == 0.95
     rag = next(e for e in events if e["type"] == "rag")
-    assert rag["sources"] and "如何重置密码" in rag["sources"][0]
+    # sources 现在是稳定的 item_id（不再是 text 首行截断）。
+    assert rag["sources"] == ["account-01", "account-02"], rag["sources"]
     route = next(e for e in events if e["type"] == "route")
     assert route["agent"] == "technical_agent"
+    # route 只发一次（messages 分支补发 + updates 分支互斥，不重复）。
+    assert types.count("route") == 1, types
     tokens = "".join(e["text"] for e in events if e["type"] == "token")
     assert tokens == "你好", tokens
     done = next(e for e in events if e["type"] == "done")
     assert done["escalated"] is False
     print("✓ /api/chat 正常流：meta/rag/route/token×2/done 顺序与字段正确，token 拼接=", tokens)
+
+
+def test_route_emitted_before_first_token():
+    """
+    route 时机修正：messages 的第一个 agent token 先于 updates 那条节点 state 更新到达时，
+    route 事件应在第一个 token **之前（或同时）** 发出，且全程只发一次。
+
+    复刻真实顺序：intent/rag 更新 -> agent 的两个 token（messages，先到）->
+    最后才是 technical_agent 的 update（updates，后到）。
+    旧实现只在 updates 分支发 route，会让 route 落在 token 之后；新实现在第一个 token 前补发。
+    """
+    normal_seq = [
+        ("updates", {"intent": {"intent": "technical", "confidence": 0.95}}),
+        ("updates", {"rag": {"retrieved_docs": []}}),
+        # token 先到（messages 流），此刻 technical_agent 的 update 还没来。
+        ("messages", (_FakeMsg("你", id="lc_run--1"), {"langgraph_node": "technical_agent"})),
+        ("messages", (_FakeMsg("好", id="lc_run--1"), {"langgraph_node": "technical_agent"})),
+        # 节点 state 更新最后才到（updates 流）——旧实现要等到这里才发 route。
+        ("updates", {"technical_agent": {"messages": ["...AIMessage..."]}}),
+    ]
+    state_values = {"intent": None, "confidence": None, "retrieved_docs": [], "escalated": False}
+    fake = FakeGraph(normal_seq=normal_seq, state_values=state_values)
+    client = _make_client(fake)
+
+    resp = client.post("/api/chat", json={"message": "电脑连不上网", "thread_id": "t-route"})
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+
+    # route 恰好出现一次。
+    assert types.count("route") == 1, types
+    # route 在第一个 token 之前（索引更小）。
+    first_route = types.index("route")
+    first_token = types.index("token")
+    assert first_route < first_token, (
+        f"route 应在第一个 token 之前发出，实际 types={types}"
+    )
+    # route 落点正确。
+    route = next(e for e in events if e["type"] == "route")
+    assert route["agent"] == "technical_agent", route
+    # token 仍正常拼接（去重未被破坏）。
+    tokens = "".join(e["text"] for e in events if e["type"] == "token")
+    assert tokens == "你好", tokens
+    print("✓ route 时机：第一个 token 之前补发 route（agent=technical_agent），只发一次，去重不破")
 
 
 def test_chat_dedups_resent_agent_message():
@@ -255,6 +308,7 @@ def _run_all():
     tests = [
         test_index_returns_html,
         test_chat_normal_flow,
+        test_route_emitted_before_first_token,
         test_chat_dedups_resent_agent_message,
         test_chat_interrupt_then_resume,
         test_chat_error_event_on_exception,

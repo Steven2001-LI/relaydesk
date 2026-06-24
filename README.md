@@ -39,3 +39,19 @@ langgraph_cs/.venv/bin/python -m langgraph_cs.main
 ```
 
 > 务必从仓库根目录用 `-m` 模块方式运行。技术栈：LangGraph · DeepSeek · 硅基流动 · Chroma · BM25 · FastAPI。
+
+### 可选：以标准包方式安装（控制台入口命令）
+
+仓库根目录提供了 `pyproject.toml`，可把项目当作标准 Python 包安装，从而用更短的入口命令启动（`python -m langgraph_cs.web` 等原有方式仍然可用）：
+
+```bash
+# 在已建好的 venv 里安装（-e 可编辑安装，改代码即时生效）
+langgraph_cs/.venv/bin/python -m pip install -e .
+
+# 装好后多出两个控制台命令：
+langgraph-cs-web    # 启动 Web 界面（等价于 python -m langgraph_cs.web）
+langgraph-cs        # 启动命令行对话（等价于 python -m langgraph_cs.main）
+```
+
+> 需要可复现的精确依赖版本时，用仓库根的 `requirements.lock`（`pip freeze` 产物）：
+> `langgraph_cs/.venv/bin/python -m pip install -r requirements.lock`。

@@ -501,15 +501,16 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
           break;
         }
         case "rag": {
+          // sources 现在是稳定的条目 item_id 列表（如 ["billing-03", "account-01"]）。
           const sources = evt.sources || [];
           // pipeline ②：人话整句「知识检索：命中 3 条相关资料」
           if (sources.length) {
             advancePipeline("rag", `命中 ${sources.length} 条相关资料`);
-            // 合并标签行 · 段3：命中 N 条知识（无 RAG / 未命中时省略此段）
+            // 合并标签行 · 段3：主词「命中 N 条知识」不变，tooltip 里列出命中的 item_id。
             bot.setMetaSeg(
               "rag",
               `命中 ${sources.length} 条知识`,
-              "rag · " + sources.map((s) => String(s).split("\n")[0]).join(" · ")
+              "rag · " + sources.map((s) => String(s)).join(" · ")
             );
           } else {
             advancePipeline("rag", "未命中相关资料");
