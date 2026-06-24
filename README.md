@@ -4,6 +4,14 @@
 
 > 项目以分阶段方式构建（见 git 提交历史），每个阶段一个可独立讲清的能力。完整技术文档见 [`langgraph_cs/README.md`](langgraph_cs/README.md)。
 
+![RelayDesk Web 界面：实时决策轨迹 + 流式应答](docs/web-screenshot.png)
+
+> 「Agent 控制台」深色界面：左侧对话区，右侧「决策轨迹」随每轮 SSE 事件**实时点亮**（意图识别 → 知识检索 → 路由分发 → 生成应答），把 Agent 内部决策做成界面 signature。
+
+**转人工（human-in-the-loop）**：说一句「转人工」，整张图暂停、界面切坐席模式等人工接管：
+
+![RelayDesk 转人工坐席模式](docs/web-seat-mode.png)
+
 ## 能力一览
 
 | 模块 | 能力 | 关键技术 |
