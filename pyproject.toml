@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "用 LangGraph 从零搭建的多 Agent 智能客服：意图识别 → RAG 检索 → 条件路由 → 人工介入 → 持久化 → 评测 → Web 界面"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "Steven Li" }]
 keywords = ["langgraph", "rag", "customer-service", "multi-agent", "deepseek"]
 
@@ -52,5 +52,10 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
-# 把 Web 静态资源（聊天页 / JS / CSS）一并打包，否则装好后 web 入口找不到页面。
+# 非 .py 资源要显式纳入，否则真正构建 wheel 后会丢失（pip install -e . 用源码目录看不出问题）。
+# langgraph_cs 包：FAQ 知识库语料（RAG 灌库必需）+ 环境变量模板。
+"langgraph_cs" = ["data/faq/*.md", ".env.example"]
+# Web 静态资源（聊天页 / JS / CSS），否则装好后 web 入口找不到页面。
 "langgraph_cs.web" = ["static/*"]
+# 评测数据集（检索测试集 / 端到端答案题集）。
+"langgraph_cs.eval" = ["*.json"]
