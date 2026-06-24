@@ -1,0 +1,41 @@
+# LangGraph 多 Agent 智能客服
+
+用 **LangGraph** 从零搭建的多 Agent 客服系统：意图识别 → RAG 检索 → 多 Agent 条件路由 → 人工介入（human-in-the-loop）→ 持久化记忆 → 自动评测 → 可视化 Web 界面。
+
+> 项目以分阶段方式构建（见 git 提交历史），每个阶段一个可独立讲清的能力。完整技术文档见 [`langgraph_cs/README.md`](langgraph_cs/README.md)。
+
+## 能力一览
+
+| 模块 | 能力 | 关键技术 |
+|---|---|---|
+| 编排 | `intent → rag → 条件路由 → 专职 Agent` | LangGraph `StateGraph` + `add_conditional_edges` |
+| 多 Agent | 技术 / 账单 / 通用 / 转人工，低置信降级 + 运行时兜底 | 条件路由 + 双层降级 |
+| 人工介入 | 转人工时图暂停、坐席输入后恢复 | `interrupt()` + `Command(resume=...)` |
+| RAG | 知识库检索 + rerank，可量化对比 | 硅基流动 embedding/rerank + Chroma + BM25 对照 |
+| 记忆 | 多轮上下文，重启不失忆 | `MemorySaver` / `SqliteSaver` checkpointer |
+| 评测 | 检索层指标 + 端到端答案质量（LLM-judge）+ LangSmith | 自建测试集 / `langsmith` |
+| 前端 | 决策轨迹实时可视化、流式打字、坐席模式 | FastAPI + 原生 HTML/JS（SSE） |
+
+**实测数据**：RAG 在弱检索器(BM25)下 rerank 把 Hit@1 87.3%→92.7%、MRR 0.873→0.927；端到端答案质量（DeepSeek-judge）准确性 4.92 / 有用性 4.85（满分 5）。
+
+## 快速开始
+
+```bash
+# 1. 建虚拟环境 + 装依赖
+python3 -m venv langgraph_cs/.venv
+langgraph_cs/.venv/bin/python -m pip install -r langgraph_cs/requirements.txt
+
+# 2. 配置 key：复制模板后填入
+cp langgraph_cs/.env.example langgraph_cs/.env
+#   编辑 langgraph_cs/.env，填 DEEPSEEK_API_KEY（对话）与 SILICONFLOW_API_KEY（embedding/rerank）
+
+# 3. 灌知识库（RAG 必需，一次即可）
+langgraph_cs/.venv/bin/python -m langgraph_cs.scripts.ingest_faq
+
+# 4a. Web 界面（推荐）
+langgraph_cs/.venv/bin/python -m langgraph_cs.web   # 浏览器开 http://127.0.0.1:8000
+# 4b. 命令行
+langgraph_cs/.venv/bin/python -m langgraph_cs.main
+```
+
+> 务必从仓库根目录用 `-m` 模块方式运行。技术栈：LangGraph · DeepSeek · 硅基流动 · Chroma · BM25 · FastAPI。
