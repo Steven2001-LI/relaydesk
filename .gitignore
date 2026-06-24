@@ -16,6 +16,9 @@ langgraph_cs/data/chroma_rag/   # Chroma 向量库（embedding 产物，可由 i
 *.sqlite-shm
 logs/
 
+# 个人面试谈点，本地留底，不公开
+docs/interview-prep.md
+
 # OS / IDE
 .DS_Store
 Thumbs.db
