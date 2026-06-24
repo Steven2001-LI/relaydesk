@@ -41,6 +41,9 @@ langgraph-cs-web = "langgraph_cs.web.__main__:main"
 langgraph-cs = "langgraph_cs.main:main"
 
 [tool.setuptools]
+# 显式声明：不靠 VCS/MANIFEST 自动纳入，只用下方 package-data 的显式 glob，
+# 消除 setuptools 对"用了 package-data 但未声明 include-package-data"的构建告警。
+include-package-data = false
 # 显式列出顶层包，让 setuptools 找到 langgraph_cs 及其子包。
 packages = [
     "langgraph_cs",
