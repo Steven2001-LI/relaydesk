@@ -6,15 +6,18 @@
     2) SSE 流式：POST /api/chat 与 /api/resume 返回 text/event-stream；
        因为 EventSource 只支持 GET，这里用 fetch + ReadableStream 手动解析 SSE。
     3) signature 决策轨迹 pipeline（调试面板化）：把 meta / rag / route / token 事件实时映射到
-       右侧四阶段的 idle/active/done 点亮（当前步骤高亮、已完成低亮、未开始更弱）；
-       每轮发新消息整条重置。历史决策以紧凑 chips 留痕在每条 Agent 气泡上方。
-    4) 人话映射：技术名集中翻成中文友好词（INTENT_LABEL / AGENT_LABEL 等），
-       技术原值降级为 chip 小字 + title/tooltip，方便演示「可观测」。
-    5) 轻量安全 markdown：先转义 HTML，再支持 # 标题 / **bold** / 有序·无序列表 / 换行 / `code`。
+       右侧四阶段的 idle/active/done 点亮（当前步骤高亮、已完成低亮、未开始更弱）；右栏主文案
+       为产品化人话整句（意图识别：…/知识检索：…/路由分发：…/生成应答：…），技术字段进 tooltip。
+       每轮发新消息整条重置。
+    4) 人话映射 + 合并标签行：技术名集中翻成中文友好词（INTENT_LABEL / AGENT_LABEL 等）；意图/路由/RAG
+       三段合并为每条 Agent 气泡上方「一行点分隔」摘要（技术支持 · 置信度 0.95 · 命中 3 条知识），
+       技术原值降级进整行 title/tooltip，方便演示「可观测」。
+    5) 轻量安全 markdown：先转义 HTML，再支持 # 标题 / **bold** / 有序·无序列表 / 换行 / `code`；
+       连续有序列表项（含项间空行）合并进同一个 <ol>，靠浏览器自动顺序编号（1.2.3.4.）。
     6) HITL 坐席模式：收到 interrupt -> pipeline 转琥珀 + 顶部系统条 + 底栏切坐席皮肤；
        右栏「转人工三段状态」分段呈现 ①AI 已判断 ②等待坐席接入 ③人工回复；
        发送走 /api/resume，恢复后把坐席回复作为带琥珀标签的 Agent 气泡显示并退出坐席模式。
-    7) 业务操作：结束会话（=重置/清空+新 thread_id）、重新提问（重发上一条用户消息）。
+    7) 业务操作：结束会话（=重置/清空+新 thread_id）；重新提问快捷操作挂在每条回答气泡下方。
 
   事件协议（与 server.py _stream_graph 对齐，前端绝不改）：
     meta {intent, confidence} · rag {sources[]} · route {agent} · token {text}
@@ -29,7 +32,7 @@ const composerEl = $("#composer");
 const seatBanner = $("#seat-banner");
 const threadPill = $("#thread-pill");
 const newBtn = $("#btn-new");
-const retryBtn = $("#btn-retry");
+const welcomeEl = $("#welcome");   // 开场气泡（首条用户消息后折叠）
 
 // 连接状态指示
 const statusEl = $("#status");
@@ -143,6 +146,7 @@ function el(tag, className, html) {
   return node;
 }
 
+// >>> PURE-MARKDOWN-BLOCK-START（此区间为无 DOM 依赖的纯函数，供 Node 单测原样抽取）
 function escapeHtml(s) {
   return (s || "").replace(/[&<>"']/g, (c) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
@@ -153,9 +157,31 @@ function escapeHtml(s) {
 //   原则：先整体转义 HTML（杜绝注入），再在转义后的纯文本上做有限的内联/块级替换。
 //   支持：# ~ ###### 标题 · **bold** · `code` · 有序列表(1. ) · 无序列表(- / * ) · 段落与换行。
 //   不引第三方库，只覆盖客服回答常见的标题 + 加粗 + 列表 + 换行。
+//
+//   列表编号 bug 修复（P0-2 关键）：连续的有序列表项——即便项之间夹着空行——
+//   必须合并进同一个 <ol>，去掉源里的字面数字，靠 <ol><li> 浏览器自动顺序编号；
+//   否则空行会过早 closeList()，下一个「1.」又新开 <ol> 从 1 重启，导致每项都显示「1.」。
+//   实现：遇到空行不立刻关列表，先「向后看」——若后续仍是同类型列表项则保持列表打开。
+const RE_HEADING = /^\s*(#{1,6})\s+(.*)$/;
+const RE_OL = /^\s*\d+\.\s+(.*)$/;
+const RE_UL = /^\s*[-*]\s+(.*)$/;
+
+// 行类型分类：返回 { kind: "h"|"ol"|"ul"|"blank"|"p", ... }
+function classifyLine(line) {
+  const h = line.match(RE_HEADING);
+  if (h) return { kind: "h", level: h[1].length, content: h[2].trim() };
+  const ol = line.match(RE_OL);
+  if (ol) return { kind: "ol", content: ol[1] };
+  const ul = line.match(RE_UL);
+  if (ul) return { kind: "ul", content: ul[1] };
+  if (line.trim() === "") return { kind: "blank" };
+  return { kind: "p", content: line };
+}
+
 function renderMarkdown(raw) {
   const text = escapeHtml(raw || "");
   const lines = text.split("\n");
+  const classified = lines.map(classifyLine);
   let html = "";
   let listType = null;          // 当前列表类型："ol" | "ul" | null
   let paraBuf = [];             // 正在累积的普通段落行
@@ -170,37 +196,39 @@ function renderMarkdown(raw) {
     if (listType) { html += "</" + listType + ">"; listType = null; }
   };
 
-  for (const line of lines) {
-    // 标题：行首允许空格，1~6 个 # 后跟空格 -> <h1>~<h6>（统一带 .md-h 样式钩子）。
-    // 文本已整体转义，故这里安全；标题自成块，先收尾段落与列表。
-    const hMatch = line.match(/^\s*(#{1,6})\s+(.*)$/);
-    const olMatch = line.match(/^\s*\d+\.\s+(.*)$/);
-    const ulMatch = line.match(/^\s*[-*]\s+(.*)$/);
-    if (hMatch) {
-      flushPara();
-      closeList();
-      const level = hMatch[1].length;
-      const content = inline(hMatch[2].trim());
-      if (content) {
-        html += `<h${level} class="md-h md-h${level}">${content}</h${level}>`;
-      }
-    } else if (olMatch) {
-      flushPara();
-      if (listType !== "ol") { closeList(); html += "<ol>"; listType = "ol"; }
-      html += "<li>" + inline(olMatch[1]) + "</li>";
-    } else if (ulMatch) {
-      flushPara();
-      if (listType !== "ul") { closeList(); html += "<ul>"; listType = "ul"; }
-      html += "<li>" + inline(ulMatch[1]) + "</li>";
-    } else if (line.trim() === "") {
-      // 空行：结束当前段落与列表
-      flushPara();
-      closeList();
-    } else {
-      closeList();
-      paraBuf.push(line);
+  // 向后看：从空行 i 之后，跳过连续空行，返回下一条非空行的类型（或 null）。
+  const nextNonBlankKind = (i) => {
+    for (let j = i + 1; j < classified.length; j++) {
+      if (classified[j].kind !== "blank") return classified[j].kind;
     }
-  }
+    return null;
+  };
+
+  classified.forEach((info, i) => {
+    if (info.kind === "h") {
+      // 标题自成块，先收尾段落与列表。文本已整体转义，故这里安全。
+      flushPara();
+      closeList();
+      const content = inline(info.content);
+      if (content) {
+        html += `<h${info.level} class="md-h md-h${info.level}">${content}</h${info.level}>`;
+      }
+    } else if (info.kind === "ol" || info.kind === "ul") {
+      flushPara();
+      // 列表类型切换才关旧开新；同类型则续用同一个 <ol>/<ul>（自动顺序编号）。
+      if (listType !== info.kind) { closeList(); html += "<" + info.kind + ">"; listType = info.kind; }
+      html += "<li>" + listItemHtml(info.content) + "</li>";
+    } else if (info.kind === "blank") {
+      // 空行：永远结束段落；但列表只在「后续不再是同类型列表项」时才关闭，
+      // 这样「项间夹空行」的有序列表会合并进同一个 <ol>，浏览器自动 1.2.3. 顺序编号。
+      flushPara();
+      if (listType && nextNonBlankKind(i) !== listType) closeList();
+    } else {
+      // 普通段落行：开启段落即结束列表。
+      closeList();
+      paraBuf.push(info.content);
+    }
+  });
   flushPara();
   closeList();
   return html;
@@ -211,42 +239,79 @@ function renderMarkdown(raw) {
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/`([^`]+)`/g, "<code>$1</code>");
   }
+
+  // 列表项渲染（P0-4 步骤化易扫读）：若项内是「标题：说明」结构，
+  //   把「标题：」包成 .li-title（CSS 加粗），其余说明留默认（CSS 次要色弱化）。
+  //   判定克制：标题侧不含已有粗体/代码标记、且较短（≤24 字）时才拆，避免误伤普通句子。
+  function listItemHtml(s) {
+    const rendered = inline(s);
+    // 用转义后的全角「：」或半角「: 」（后接空格）切一次。
+    const m = rendered.match(/^([^：]{1,24})：(.+)$/) || rendered.match(/^([^:]{1,24}):\s+(.+)$/);
+    if (m && !/<(strong|code)>/.test(m[1])) {
+      const sep = rendered.indexOf("：") !== -1 ? "：" : ": ";
+      return `<span class="li-title">${m[1]}${sep}</span><span class="li-desc">${m[2]}</span>`;
+    }
+    return rendered;
+  }
 }
+// <<< PURE-MARKDOWN-BLOCK-END
 
 function scrollToBottom() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-// 追加一条用户气泡
+// 追加一条用户气泡（首条用户消息后折叠开场气泡，省空间）
 function addUserMessage(text) {
+  if (welcomeEl) welcomeEl.hidden = true;
   const wrap = el("div", "msg msg-user");
   wrap.appendChild(el("div", "bubble", escapeHtml(text)));
   messagesEl.appendChild(wrap);
   scrollToBottom();
 }
 
-// 创建一条机器人消息（含 chips 容器 + 气泡），返回操作句柄。
+// 创建一条机器人消息（含 meta 标签行 + 气泡 + 气泡下快捷操作），返回操作句柄。
+//   P0-3：意图/路由/RAG 三段不再各自分离成 chip，而是合并为「一行点分隔」摘要：
+//     技术支持 · 置信度 0.95 · 命中 3 条知识。技术原值进 title/tooltip；无 RAG 时省略「命中」段。
+//   P1：「重新提问」快捷操作放在回答气泡「下方」。
 function createBotMessage({ fromSeat = false } = {}) {
   const wrap = el("div", "msg msg-bot" + (fromSeat ? " from-seat" : ""));
-  const chips = el("div", "chips");
+  const meta = el("div", "meta-line");   // 合并后的单行标签（点分隔）
   const bubble = el("div", "bubble typing");
-  wrap.appendChild(chips);
+  const actions = el("div", "bubble-actions");  // 气泡下方快捷操作条
+  wrap.appendChild(meta);
   wrap.appendChild(bubble);
+  wrap.appendChild(actions);
   messagesEl.appendChild(wrap);
   scrollToBottom();
 
   let raw = "";
+  // 累积 meta 段（按事件到达陆续填充），finish() 时渲染成一行。
+  const segs = { intent: null, route: null, rag: null };
+  const titles = [];
+
+  function renderMeta() {
+    const parts = [segs.intent, segs.route, segs.rag].filter(Boolean);
+    if (!parts.length) { meta.remove(); return; }
+    // 点分隔：<span> · <span> · <span>，整行可 hover 看技术原值。
+    meta.innerHTML = parts
+      .map((p) => `<span class="meta-seg">${escapeHtml(p)}</span>`)
+      .join('<span class="meta-dot" aria-hidden="true">·</span>');
+    if (titles.length) meta.title = titles.join(" · ");
+  }
+
   return {
-    addChip(cls, text) {
-      chips.appendChild(el("span", "chip " + cls, escapeHtml(text)));
+    // 人话 meta 段：key=intent|route|rag，main=主词，title=技术原值（进整行 tooltip）。
+    setMetaSeg(key, main, title = "") {
+      if (key in segs) segs[key] = main;
+      if (title) titles.push(title);
+      renderMeta();
       scrollToBottom();
     },
-    // 人话 chip：主词正常字号 + 技术原值降级为小字（tech），并把技术原值放 title 供 hover。
-    addChipCN(cls, { main, tech = "", title = "" } = {}) {
-      const techHtml = tech ? ` <span class="chip-tech">${escapeHtml(tech)}</span>` : "";
-      const node = el("span", "chip " + cls, escapeHtml(main) + techHtml);
-      if (title) node.title = title;
-      chips.appendChild(node);
+    // 坐席标签（保留独立 chip 观感，复用 meta 行渲染单段）。
+    setSeatTag(main, title = "") {
+      segs.route = main;
+      if (title) titles.push(title);
+      renderMeta();
       scrollToBottom();
     },
     appendToken(t) {
@@ -264,12 +329,22 @@ function createBotMessage({ fromSeat = false } = {}) {
       bubble.classList.remove("typing");
       // 收尾时把累积文本做安全 markdown 渲染，提升可读性（bold / 列表 / 换行）。
       if (raw) bubble.innerHTML = renderMarkdown(raw);
-      if (!chips.children.length) chips.remove();
+      renderMeta();
+    },
+    // P1：把「重新提问」快捷操作挂到这条回答气泡下方（非坐席回复才挂）。
+    mountRetry() {
+      if (fromSeat) return;
+      const btn = el("button", "btn-quick", "↻ 重新提问");
+      btn.type = "button";
+      btn.title = "重发上一条用户消息";
+      btn.addEventListener("click", onRetry);
+      actions.appendChild(btn);
+      scrollToBottom();
     },
     markError() {
       wrap.classList.add("is-error");
       bubble.classList.remove("typing");
-      if (!chips.children.length) chips.remove();
+      renderMeta();
     },
     hasText: () => raw.length > 0,
   };
@@ -415,44 +490,39 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
       switch (evt.type) {
         case "meta": {
           if (evt.intent) {
-            const emoji = INTENT_EMOJI[evt.intent] || "🎯";
             const cn = INTENT_LABEL[evt.intent] || evt.intent;
-            const lvl = confidenceLevel(evt.confidence);
             const raw = (evt.confidence != null) ? Number(evt.confidence).toFixed(2) : "";
-            // pipeline ①：意图识别 —— 人话主词 + 置信度小字
-            advancePipeline("intent", lvl ? `${cn} · 置信 ${raw}` : cn);
-            // 历史留痕 chip：主词「转人工意图：高」式表达，技术原值降级小字 + hover
-            const main = lvl ? `${emoji} ${cn}：${lvl}` : `${emoji} ${cn}`;
-            bot.addChipCN("chip-intent", {
-              main,
-              tech: raw,
-              title: `intent=${evt.intent}${raw ? ` confidence=${raw}` : ""}`,
-            });
+            // pipeline ①：人话整句「意图识别：技术支持，置信度 0.95」
+            advancePipeline("intent", raw ? `识别为${cn}，置信度 ${raw}` : `识别为${cn}`);
+            // 合并标签行 · 段1：主词 +（可选）置信度，技术原值进整行 tooltip
+            const main = raw ? `${cn} · 置信度 ${raw}` : cn;
+            bot.setMetaSeg("intent", main, `intent=${evt.intent}${raw ? ` confidence=${raw}` : ""}`);
           }
           break;
         }
         case "rag": {
           const sources = evt.sources || [];
-          // pipeline ②：知识库检索（命中数 / 标题）
+          // pipeline ②：人话整句「知识检索：命中 3 条相关资料」
           if (sources.length) {
-            const first = String(sources[0]).split("\n")[0];
-            advancePipeline("rag", `命中 ${sources.length} 条 · ${first}`);
-            bot.addChipCN("chip-rag", {
-              main: `📚 知识库检索：${sources.length} 条`,
-              title: "rag · " + sources.map((s) => String(s).split("\n")[0]).join(" · "),
-            });
+            advancePipeline("rag", `命中 ${sources.length} 条相关资料`);
+            // 合并标签行 · 段3：命中 N 条知识（无 RAG / 未命中时省略此段）
+            bot.setMetaSeg(
+              "rag",
+              `命中 ${sources.length} 条知识`,
+              "rag · " + sources.map((s) => String(s).split("\n")[0]).join(" · ")
+            );
           } else {
-            advancePipeline("rag", "未命中");
+            advancePipeline("rag", "未命中相关资料");
           }
           break;
         }
         case "route": {
           if (evt.agent) {
-            // pipeline ③：路由分发 —— 中文 agent 名 + 技术名 hover
+            // pipeline ③：人话整句「路由分发：分配到技术支持」
             const cn = AGENT_LABEL[evt.agent] || evt.agent;
-            advancePipeline("route", cn);
-            const emoji = AGENT_EMOJI[evt.agent] || "🤖";
-            bot.addChipCN("chip-route", { main: `${emoji} ${cn}`, title: "agent=" + evt.agent });
+            advancePipeline("route", `分配到${cn}`);
+            // 合并标签行 · 段2：分配到 <agent>，技术名进 tooltip
+            bot.setMetaSeg("route", `分配到${cn}`, "agent=" + evt.agent);
           }
           break;
         }
@@ -460,7 +530,7 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
           // 第一个 token -> 点亮④（生成应答中）
           if (!answered) {
             answered = true;
-            advancePipeline("answer", "应答中…");
+            advancePipeline("answer", "正在生成回复…");
           }
           bot.appendToken(evt.text || "");
           break;
@@ -475,11 +545,13 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
           break;
         case "done":
           bot.finish();
-          // ④ 完成
+          // ④ 完成（人话整句「生成应答：已完成」）
           if (isResume) {
             completeStage("answer", "坐席已回复");
           } else if (answered) {
             completeStage("answer", evt.escalated ? "已转人工" : "已完成");
+            // P1：回答落地后，把「重新提问」快捷操作挂到该气泡下方。
+            bot.mountRetry();
           }
           break;
         case "error":
@@ -504,8 +576,7 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
 async function sendUserMessage(text) {
   resetPipeline();            // 新一轮：整条 pipeline 重置为 idle
   seatFlowReset();            // 清掉上一轮的转人工三段卡
-  state.lastUserText = text;  // 记下用于「重新提问」
-  updateRetryBtn();
+  state.lastUserText = text;  // 记下用于「重新提问」（快捷操作挂在每条回答气泡下方）
   addUserMessage(text);
   const bot = createBotMessage();
   const { interrupted } = await runStream(
@@ -521,7 +592,7 @@ async function sendSeatReply(text) {
   // 坐席的话以"输入"显示在右侧，让演示看到坐席输了什么。
   addUserMessage(text);
   const bot = createBotMessage({ fromSeat: true });
-  bot.addChipCN("chip-seat", { main: "🧑‍💼 人工坐席", title: "agent=escalation" });
+  bot.setSeatTag("人工坐席已接管", "agent=escalation");
   seatFlowReply(text);        // 三段状态卡：点亮 ③ 人工回复 + 填入内容
   await runStream(
     "/api/resume",
@@ -531,11 +602,6 @@ async function sendSeatReply(text) {
   );
   exitSeatMode();
   setStatus(null, "就绪");
-}
-
-// 「重新提问」可用性：有上一条用户消息、非坐席模式、非忙时可点。
-function updateRetryBtn() {
-  retryBtn.disabled = state.busy || state.seatMode || !state.lastUserText;
 }
 
 // ── 输入框统一提交入口 ───────────────────────────────────
@@ -561,7 +627,6 @@ function setBusy(b) {
   state.busy = b;
   sendBtn.disabled = b;
   inputEl.disabled = b;
-  updateRetryBtn();
   if (b) {
     setStatus("busy", "推理中");
   } else if (!state.seatMode) {
@@ -586,12 +651,12 @@ function resetSession() {
   resetPipeline();
   seatFlowReset();
   setStatus(null, "就绪");
-  // 保留开场气泡（第一条），清掉其余
+  // 保留开场气泡（第一条），清掉其余；并重新展开开场气泡
   while (messagesEl.children.length > 1) {
     messagesEl.removeChild(messagesEl.lastChild);
   }
+  if (welcomeEl) welcomeEl.hidden = false;
   renderThreadPill();
-  updateRetryBtn();
   inputEl.focus();
 }
 
@@ -611,7 +676,6 @@ async function onRetry() {
 // ── 事件绑定 ─────────────────────────────────────────────
 sendBtn.addEventListener("click", onSubmit);
 newBtn.addEventListener("click", resetSession);
-retryBtn.addEventListener("click", onRetry);
 inputEl.addEventListener("input", autoGrow);
 inputEl.addEventListener("keydown", (e) => {
   // Enter 发送，Shift+Enter 换行
@@ -625,5 +689,4 @@ inputEl.addEventListener("keydown", (e) => {
 renderThreadPill();
 resetPipeline();
 seatFlowReset();
-updateRetryBtn();
 inputEl.focus();

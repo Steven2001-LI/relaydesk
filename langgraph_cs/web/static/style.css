@@ -177,7 +177,8 @@ body {
   border-radius: 999px;
 }
 
-/* 「结束会话」次要轻样式：弱描边、低存在感 */
+/* 「结束会话」：默认很低调（弱描边、灰字、低存在感）；
+   P1-④：hover 才显「低调危险红」——克制的暗红，提示这是破坏性操作（清空会话）。 */
 .btn-ghost {
   font-family: var(--font-body);
   font-size: 12.5px;
@@ -190,7 +191,11 @@ body {
   cursor: pointer;
   transition: background .15s, border-color .15s, color .15s;
 }
-.btn-ghost:hover { background: var(--panel); border-color: var(--line-strong); color: var(--ink); }
+.btn-ghost:hover {
+  background: rgba(255, 107, 107, .08);
+  border-color: rgba(255, 107, 107, .35);
+  color: #ff9d9d;
+}
 
 /* ── 转人工系统条（细长、左对齐、低调） ── */
 .seat-banner {
@@ -220,12 +225,12 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ── 主体两栏（右栏宽度略减，给主聊天更多空间） ── */
+/* ── 主体两栏（右栏宽度再略减到 260，给主聊天更多空间） ── */
 .layout {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 1fr 288px;
+  grid-template-columns: 1fr 260px;
 }
 
 /* 左：对话区 */
@@ -237,7 +242,8 @@ body {
   border-right: 1px solid var(--line);
 }
 
-/* ── 消息列表（间距压缩 ~28%：18px -> 13px） ── */
+/* ── 消息列表（间距压缩 ~28%：18px -> 13px）
+   P1-①：内容列居中、最大宽度 800px（760–840 区间），气泡更窄更聚焦。 ── */
 .messages {
   flex: 1;
   overflow-y: auto;
@@ -247,8 +253,18 @@ body {
   gap: 13px;
   scroll-behavior: smooth;
 }
+/* 居中的内容列：所有消息项共享同一条 800px 中轴 */
+.messages > * {
+  width: 100%;
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+}
 
-.msg { display: flex; flex-direction: column; max-width: 82%; }
+/* 单条消息：气泡本身再收窄到 ~76%（在 800 列内更紧凑） */
+.msg { display: flex; flex-direction: column; max-width: 76%; }
+/* 开场气泡折叠：.msg 的 display:flex 优先级高于 [hidden]，需显式隐藏（P1-②）。 */
+.msg.welcome[hidden] { display: none; }
 .msg-user { align-self: flex-end; align-items: flex-end; }
 .msg-bot { align-self: flex-start; align-items: flex-start; }
 
@@ -315,6 +331,21 @@ body {
 .msg-bot.from-seat .bubble .md-h6 { color: var(--seat-soft); }
 .bubble ol, .bubble ul { margin: 6px 0; padding-left: 22px; }
 .bubble li { margin: 2px 0; }
+/* P0-4 长回答步骤化：有序列表项之间留更大间距，像「一步一步」的步骤卡，便于扫读。
+   依赖 <ol> 浏览器自动顺序编号（1.2.3.4.，不再每项都 1.）。 */
+.bubble ol { padding-left: 24px; }
+.bubble ol > li {
+  margin: 10px 0;
+  padding-left: 4px;
+  line-height: 1.6;
+}
+.bubble ol > li:first-child { margin-top: 4px; }
+.bubble ol > li:last-child { margin-bottom: 2px; }
+.bubble ol > li::marker { color: var(--cyan); font-weight: 600; }
+/* 项内「标题：说明」结构：标题加粗、说明用次要色弱化，一眼看出先做哪一步。 */
+.bubble li .li-title { font-weight: 600; color: var(--ink); }
+.bubble li .li-desc { color: var(--ink-soft); }
+.msg-bot.from-seat .bubble ol > li::marker { color: var(--seat); }
 .bubble strong { color: var(--cyan); font-weight: 600; }
 .msg-user .bubble strong { color: #0b1020; }
 .msg-bot.from-seat .bubble strong { color: var(--seat); }
@@ -335,36 +366,49 @@ body {
 }
 @keyframes blink { to { opacity: 0; } }
 
-/* ── 历史留痕 chips（意图 / 路由 / RAG 来源）── 贴近其消息（间距收紧） ── */
-.chips {
+/* ── 合并标签行（P0-3）：意图/路由/RAG 三段压成「一行点分隔」，比三个分离 chip 更干净。
+   形如：技术支持 · 置信度 0.95 · 命中 3 条知识。整行可 hover 看技术原值（title）。── */
+.meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.meta-line:empty { display: none; }
+.meta-seg { white-space: nowrap; }
+.meta-dot { color: var(--ink-faint); }
+/* 坐席气泡的标签行切琥珀 */
+.msg-bot.from-seat .meta-line { color: var(--seat); }
+
+/* ── 气泡下方快捷操作条（P1-③：「重新提问」移到回答下方，更顺手） ── */
+.bubble-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 4px;
+  margin-top: 6px;
 }
-
-.chip {
-  font-size: 11px;
-  line-height: 1.5;
-  padding: 2px 9px;
-  border-radius: var(--radius-tag);
-  border: 1px solid var(--line);
+.bubble-actions:empty { display: none; }
+.btn-quick {
+  font-family: var(--font-body);
+  font-size: 11.5px;
   color: var(--ink-soft);
-  background: var(--panel);
-  white-space: nowrap;
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 3px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
 }
-/* chip 内的人话主词正常字号，技术原值降级为更小等宽灰字 */
-.chip .chip-tech {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  color: var(--ink-faint);
-  margin-left: 5px;
+.btn-quick:hover {
+  background: var(--panel-2);
+  border-color: rgba(52, 229, 196, .35);
+  color: var(--cyan-soft);
 }
-/* 意图=蓝偏向（用户侧表达）；路由/应答=青（AI）；rag=中性；seat=橙 */
-.chip-intent { border-color: rgba(109, 139, 255, .3); color: var(--blue-soft); }
-.chip-route  { border-color: rgba(52, 229, 196, .3); color: var(--cyan-soft); }
-.chip-rag    { border-color: var(--line-strong); color: var(--ink-soft); }
-.chip-seat   { border-color: var(--seat-line); color: var(--seat); }
 
 /* ── 错误气泡 ── */
 .msg-bot.is-error .bubble {
@@ -406,7 +450,8 @@ body {
 }
 .composer-row { display: flex; align-items: flex-end; gap: 10px; }
 
-/* 输入框：默认无亮描边、仅极弱边；聚焦才显示细描边（降低存在感） */
+/* 输入框：默认暗色细边、彻底无常亮 glow/box-shadow（不抢视觉）；
+   仅聚焦时 1px 青色细描边，无光晕。发光高亮交给发送按钮。 */
 .input {
   flex: 1;
   resize: none;
@@ -416,12 +461,19 @@ body {
   font-size: 14.5px;
   color: var(--ink);
   background: var(--panel-2);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line);     /* 默认：暗色细线 */
   border-radius: var(--radius-btn);
   outline: none;
+  box-shadow: none;                  /* 杜绝任何常亮 glow */
   transition: border-color .15s;
 }
-.input:focus-visible { border-color: rgba(109, 139, 255, .55); }
+/* 聚焦：1px 青色细描边，无光晕（不要 box-shadow） */
+.input:focus,
+.input:focus-visible {
+  border-color: var(--cyan);
+  box-shadow: none;
+  outline: none;
+}
 .input::placeholder { color: var(--ink-faint); }
 
 /* 发送按钮：保留强视觉（蓝=主按钮） */
@@ -443,25 +495,10 @@ body {
 .btn-send:active { transform: scale(.94); }
 .btn-send:disabled { opacity: .45; cursor: not-allowed; filter: none; }
 
-/* 业务操作工具条（克制次要样式） */
-.composer-tools { display: flex; gap: 8px; }
-.btn-tool {
-  font-family: var(--font-body);
-  font-size: 12px;
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1px solid var(--line);
-  padding: 4px 11px;
-  border-radius: var(--radius-tag);
-  cursor: pointer;
-  transition: background .15s, border-color .15s, color .15s, opacity .15s;
-}
-.btn-tool:hover:not(:disabled) { background: var(--panel); border-color: var(--line-strong); color: var(--ink); }
-.btn-tool:disabled { opacity: .4; cursor: not-allowed; }
-
 /* 坐席模式：输入区切琥珀皮肤（克制） */
 .composer.seat-mode { background: var(--seat-bg); border-top-color: var(--seat-line); }
 .composer.seat-mode .input { border-color: var(--seat-line); background: rgba(255, 180, 84, .06); }
+.composer.seat-mode .input:focus,
 .composer.seat-mode .input:focus-visible { border-color: var(--seat); }
 .composer.seat-mode .btn-send { background: linear-gradient(135deg, #e09238, var(--seat)); }
 
