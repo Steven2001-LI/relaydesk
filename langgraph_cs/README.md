@@ -49,6 +49,52 @@ python -m langgraph_cs.main
 
 试试多轮记忆：先说「我叫小明」，再问「我叫什么名字」，看它是否记得 —— 记得就说明 checkpointer 生效了。
 
+## Web 界面（阶段 5：浏览器演示 + 决策可视化 + HITL）
+
+CLI 之外加了一个**可演示的 Web 聊天界面**：FastAPI 把同一张图（`build_graph()`）包成 HTTP 接口 + 原生
+HTML/JS 单页（无 Node/构建链）。代码全在 `langgraph_cs/web/`，**只做适配层，不改图/节点/state 核心逻辑**。
+面试时直接打开浏览器演示，比 CLI 直观：边打字边出字、每条回复带「意图 / 路由 / 知识库来源」标签、转人工时
+界面真的暂停等坐席输入。
+
+```bash
+# 1. 装依赖（已含 fastapi / uvicorn）
+pip install -r langgraph_cs/requirements.txt
+# 2. 配 key（同 CLI，复用 langgraph_cs/.env 的 DEEPSEEK_API_KEY；RAG 来源需先灌库）
+# 3. 一条命令起服务（默认 127.0.0.1:8000；可用 CS_WEB_HOST / CS_WEB_PORT 覆盖）
+python -m langgraph_cs.web
+#   浏览器打开 http://127.0.0.1:8000
+```
+
+演示要点：
+
+- **决策可视化**：每条机器人消息上方一行小标签 chips —— 🎯 意图(含置信度)、🤖 路由到的 Agent、📚 引用的知识库条目。
+- **流式打字机**：DeepSeek 的 token 经 SSE 逐字追加（`stream_mode=["updates","messages"]` 同时拿节点状态更新 + LLM token）。
+- **转人工（human-in-the-loop）**：说一句「转人工」，界面顶部弹出「🧑‍💼 已转人工」横幅、底部输入框切坐席皮肤，
+  你以坐席身份输入并发送 → 走 `/api/resume`（`Command(resume=...)`）恢复图 → 坐席回复作为机器人消息显示并退出坐席模式。
+- **多轮 / 新会话**：thread_id 存 localStorage 维持多轮；右上角「新会话」按钮重置 thread_id 清空对话。
+
+接口协议（SSE，`text/event-stream`，每条 `data: <json>\n\n`，带 `type` 字段）：
+
+| 事件 `type` | 载荷 | 何时发 |
+|---|---|---|
+| `meta` | `{intent, confidence}` | intent 节点后 |
+| `rag` | `{sources: [...]}` | rag 节点后（无检索则空） |
+| `route` | `{agent}` | 路由到的专职节点名 |
+| `token` | `{text}` | 专职 Agent 增量 token（打字机） |
+| `interrupt` | `{prompt, user_message}` | 命中转人工，图已暂停，前端切坐席模式 |
+| `done` | `{escalated}` | 本轮收尾 |
+| `error` | `{message}` | 任意异常（不让连接 500 崩） |
+
+> 截图占位：![Web 界面截图](./docs/web-screenshot.png) ·
+> ![转人工坐席模式截图](./docs/web-seat-mode.png) ——（演示时各截一张，放到 `langgraph_cs/docs/` 后替换路径）
+
+离线验证（不联网、不发真实 LLM 调用）：用 `fastapi.testclient.TestClient` + **mock 掉图的 `stream`/`get_state`**
+构造假的 updates/messages/interrupt 序列，断言 SSE 事件拼装与 interrupt→resume 流程：
+
+```bash
+langgraph_cs/.venv/bin/python -m langgraph_cs.web.tests.test_server_offline
+```
+
 ## RAG 检索链路（朴素 vs rerank）
 
 ### 链路组成
@@ -214,6 +260,8 @@ langgraph_cs/.venv/bin/python -m langgraph_cs.eval.langsmith_eval --dry-run
 | `nodes/escalation.py` | 转人工节点：`interrupt()` 暂停等人工，resume 后写回回复 | `_needs_escalation` 关键词检测（占位，未真正阻塞） |
 | `graph.py` | 组装 StateGraph + `add_conditional_edges` + checkpointer 工厂（memory/sqlite 可切换） | Orchestrator 的 run 编排 + 三层路由 + redis 会话 |
 | `main.py` | CLI 入口（支持 interrupt → 人工输入 → resume 循环；读 `CS_CHECKPOINT` 选后端） | `api/main.py` 的 `_cli()` |
+| `web/server.py` | Web 适配层：FastAPI 把图包成 `/api/chat`·`/api/resume`（SSE 流式）+ 提供静态聊天页；复用 `build_graph()`，不改图核心 | `api/main.py` 的 FastAPI（旧 anthropic 应用，不复用） |
+| `web/static/` | 原生 HTML/JS/CSS 单页：决策可视化 chips + 打字机 + 坐席模式（HITL），无 Node/构建链 | （新增能力，EchoMind 无对应） |
 | `scripts/verify_persistence.py` | 离线证明 SqliteSaver 跨进程持久化（本进程写 → 子进程读回断言） | redis 会话持久化的验证 |
 | `eval/answer_eval.py` | 端到端答案质量评测（跑图 + DeepSeek judge 打分，本地保底，不上云） | （新增能力，EchoMind 无对应） |
 | `eval/langsmith_eval.py` | LangSmith trace + 数据集 + `evaluate` 端到端评测（需 key、上云） | （新增能力，EchoMind 无对应） |

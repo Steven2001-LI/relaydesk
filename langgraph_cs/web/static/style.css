@@ -1,0 +1,281 @@
+/*
+  EchoMind 客服 Web 演示 —— 视觉样式。
+
+  设计取向（克制、专业、有设计感，不要模板感）：
+    - 配色：以"墨蓝 + 暖白 + 一抹琥珀"为主，避免默认 bootstrap 蓝。
+      机器人气泡用浅灰底，用户气泡用品牌墨蓝渐变；强调色（琥珀）只用在转人工状态。
+    - 排版：系统无衬线字体栈，行距/间距讲究；chips 低调但一眼可读。
+    - 自适应到笔记本演示尺寸即可，无需移动端。
+  所有颜色集中在 :root 变量，便于一处调色。
+*/
+
+:root {
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --ink: #1f2733;
+  --ink-soft: #5b6676;
+  --ink-faint: #8a94a3;
+  --line: #e6eaf2;
+
+  /* 品牌墨蓝（用户气泡 / 主按钮） */
+  --brand: #2b4a73;
+  --brand-2: #3a6ea5;
+  --brand-ink: #ffffff;
+
+  /* 转人工 = 琥珀强调色 */
+  --seat: #c77b16;
+  --seat-bg: #fff6e6;
+  --seat-line: #f0d49a;
+
+  --bot-bubble: #eef1f7;
+  --shadow: 0 1px 2px rgba(22, 34, 51, .06), 0 8px 24px rgba(22, 34, 51, .06);
+  --radius: 16px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 80% -10%, #e9eef9 0%, transparent 60%),
+    var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 整体布局：居中卡片，三段式（顶栏 / 消息 / 输入） ── */
+.app {
+  max-width: 860px;
+  height: 100vh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+/* ── 顶部品牌栏 ── */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #ffffff, #fbfcfe);
+}
+
+.brand { display: flex; align-items: center; gap: 12px; }
+
+.brand-mark {
+  font-size: 22px;
+  line-height: 1;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--brand), var(--brand-2));
+  color: var(--brand-ink);
+  box-shadow: var(--shadow);
+}
+
+.brand-text { display: flex; flex-direction: column; }
+.brand-name { font-weight: 700; font-size: 17px; letter-spacing: .2px; }
+.brand-sub { font-size: 12px; color: var(--ink-faint); }
+
+.topbar-actions { display: flex; align-items: center; gap: 10px; }
+
+.thread-pill {
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn-ghost {
+  font-size: 13px;
+  color: var(--brand);
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 6px 13px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.btn-ghost:hover { background: var(--bg); border-color: #d3dae7; }
+
+/* ── 转人工横幅 ── */
+.seat-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 22px;
+  background: var(--seat-bg);
+  border-bottom: 1px solid var(--seat-line);
+  color: #8a5a10;
+  font-size: 13.5px;
+  animation: slidedown .2s ease;
+}
+.seat-banner-icon { font-size: 17px; }
+.seat-banner strong { color: var(--seat); }
+
+@keyframes slidedown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── 消息列表 ── */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 22px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  scroll-behavior: smooth;
+}
+
+.msg { display: flex; flex-direction: column; max-width: 78%; }
+.msg-user { align-self: flex-end; align-items: flex-end; }
+.msg-bot { align-self: flex-start; align-items: flex-start; }
+
+.bubble {
+  padding: 11px 15px;
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msg-bot .bubble {
+  background: var(--bot-bubble);
+  color: var(--ink);
+  border-top-left-radius: 5px;
+}
+
+.msg-user .bubble {
+  background: linear-gradient(135deg, var(--brand), var(--brand-2));
+  color: var(--brand-ink);
+  border-top-right-radius: 5px;
+}
+
+/* 坐席发出的消息：琥珀描边，与普通机器人气泡区分 */
+.msg-bot.from-seat .bubble {
+  background: var(--seat-bg);
+  border: 1px solid var(--seat-line);
+  border-top-left-radius: 5px;
+}
+
+/* 打字机光标（流式进行中显示） */
+.bubble.typing::after {
+  content: "▌";
+  margin-left: 1px;
+  color: var(--ink-faint);
+  animation: blink 1s steps(2, start) infinite;
+}
+@keyframes blink { to { visibility: hidden; } }
+
+/* ── 决策可视化 chips（意图 / 路由 / RAG 来源）── */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.chip {
+  font-size: 11.5px;
+  line-height: 1.4;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  background: #fbfcfe;
+  white-space: nowrap;
+}
+.chip-intent { border-color: #cfe0f3; background: #f1f7fe; color: #2c5a8c; }
+.chip-route  { border-color: #d7e6d2; background: #f3faf0; color: #3f7a3a; }
+.chip-rag    { border-color: #e8ddc4; background: #fcf8ee; color: #8a6d2e; }
+
+/* 坐席提示气泡（在消息流里给出的小灰条） */
+.seat-hint {
+  align-self: center;
+  font-size: 12px;
+  color: var(--seat);
+  background: var(--seat-bg);
+  border: 1px solid var(--seat-line);
+  padding: 5px 12px;
+  border-radius: 999px;
+}
+
+/* 错误气泡 */
+.msg-bot.is-error .bubble {
+  background: #fdeded;
+  color: #9a2b2b;
+  border: 1px solid #f3c9c9;
+}
+
+/* ── 底部输入区 ── */
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--line);
+  background: linear-gradient(180deg, #fbfcfe, #ffffff);
+}
+
+.input {
+  flex: 1;
+  resize: none;
+  max-height: 140px;
+  padding: 11px 14px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.input:focus { border-color: var(--brand-2); box-shadow: 0 0 0 3px rgba(58, 110, 165, .12); }
+.input::placeholder { color: var(--ink-faint); }
+
+.btn-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 14px;
+  color: var(--brand-ink);
+  background: linear-gradient(135deg, var(--brand), var(--brand-2));
+  cursor: pointer;
+  transition: transform .12s, opacity .15s, filter .15s;
+}
+.btn-send:hover { filter: brightness(1.07); }
+.btn-send:active { transform: scale(.94); }
+.btn-send:disabled { opacity: .5; cursor: not-allowed; filter: none; }
+
+/* ── 坐席模式：整条底栏换琥珀皮肤，让"现在你是坐席"一目了然 ── */
+.composer.seat-mode { background: var(--seat-bg); border-top-color: var(--seat-line); }
+.composer.seat-mode .input { border-color: var(--seat-line); background: #fffdf8; }
+.composer.seat-mode .input:focus {
+  border-color: var(--seat);
+  box-shadow: 0 0 0 3px rgba(199, 123, 22, .15);
+}
+.composer.seat-mode .btn-send { background: linear-gradient(135deg, #b86f10, var(--seat)); }
+
+/* 滚动条收一收，别太抢眼 */
+.messages::-webkit-scrollbar { width: 8px; }
+.messages::-webkit-scrollbar-thumb { background: #d9e0ec; border-radius: 8px; }
+.messages::-webkit-scrollbar-thumb:hover { background: #c5cfde; }

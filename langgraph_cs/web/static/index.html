@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EchoMind · LangGraph 智能客服</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <!-- 用一个内联 SVG 作 favicon，避免额外文件 / 404 -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐻</text></svg>" />
+</head>
+<body>
+  <div class="app">
+    <!-- 顶部品牌栏 -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">ʕ•ᴥ•ʔ</span>
+        <div class="brand-text">
+          <span class="brand-name">EchoMind</span>
+          <span class="brand-sub">LangGraph 智能客服 · 决策可视化演示</span>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span class="thread-pill" id="thread-pill" title="当前会话 thread_id">会话 —</span>
+        <button class="btn-ghost" id="btn-new" title="清空对话并开启新 thread_id">新会话</button>
+      </div>
+    </header>
+
+    <!-- 转人工横幅（默认隐藏，命中 interrupt 时显示） -->
+    <div class="seat-banner" id="seat-banner" hidden>
+      <span class="seat-banner-icon">🧑‍💼</span>
+      <span class="seat-banner-text">已转人工 · 请以<strong>坐席</strong>身份回复用户</span>
+    </div>
+
+    <!-- 消息列表 -->
+    <main class="messages" id="messages">
+      <!-- 开场提示气泡 -->
+      <div class="msg msg-bot">
+        <div class="bubble">
+          你好，我是 EchoMind 智能客服 ʕ•ᴥ•ʔ<br />
+          试试问技术或账单问题，看每条回复上方的<strong>意图 / 路由 / 知识库来源</strong>标签；
+          说一句「<em>转人工</em>」可体验界面暂停 + 坐席接管。
+        </div>
+      </div>
+    </main>
+
+    <!-- 底部输入区 -->
+    <footer class="composer" id="composer">
+      <textarea
+        id="input"
+        class="input"
+        rows="1"
+        placeholder="输入消息，Enter 发送 / Shift+Enter 换行"
+        autocomplete="off"
+      ></textarea>
+      <button class="btn-send" id="btn-send" aria-label="发送">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3 10l12 2-12 2z" />
+        </svg>
+      </button>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
