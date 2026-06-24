@@ -111,11 +111,21 @@ const state = {
   lastUserText: "",   // 上一条用户消息（供「重新提问」重发）
 };
 
+const THREAD_STORAGE_KEY = "relaydesk_thread_id";
+const LEGACY_THREAD_STORAGE_KEY = "echomind_thread_id";
+
 function loadThreadId() {
-  let id = localStorage.getItem("echomind_thread_id");
+  let id = localStorage.getItem(THREAD_STORAGE_KEY);
+  if (!id) {
+    id = localStorage.getItem(LEGACY_THREAD_STORAGE_KEY);
+    if (id) {
+      localStorage.setItem(THREAD_STORAGE_KEY, id);
+      localStorage.removeItem(LEGACY_THREAD_STORAGE_KEY);
+    }
+  }
   if (!id) {
     id = newThreadId();
-    localStorage.setItem("echomind_thread_id", id);
+    localStorage.setItem(THREAD_STORAGE_KEY, id);
   }
   return id;
 }
@@ -646,7 +656,8 @@ function autoGrow() {
 //   （等价于「新会话」：是可用的业务操作，把当前会话清空、开启新 thread_id）
 function resetSession() {
   state.threadId = newThreadId();
-  localStorage.setItem("echomind_thread_id", state.threadId);
+  localStorage.setItem(THREAD_STORAGE_KEY, state.threadId);
+  localStorage.removeItem(LEGACY_THREAD_STORAGE_KEY);
   state.lastUserText = "";
   exitSeatMode();
   resetPipeline();

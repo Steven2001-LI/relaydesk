@@ -1,6 +1,6 @@
-# LangGraph 多 Agent 智能客服
+# RelayDesk · LangGraph 多 Agent 智能客服
 
-用 **LangGraph** 从零搭建的多 Agent 客服系统：意图识别 → RAG 检索 → 多 Agent 条件路由 → 人工介入（human-in-the-loop）→ 持久化记忆 → 自动评测 → 可视化 Web 界面。
+**RelayDesk** 是一个用 **LangGraph** 从零搭建的多 Agent 客服系统：意图识别 → RAG 检索 → 多 Agent 条件路由 → 人工介入（human-in-the-loop）→ 持久化记忆 → 自动评测 → 可视化 Web 界面。
 
 > 项目以分阶段方式构建（见 git 提交历史），每个阶段一个可独立讲清的能力。完整技术文档见 [`langgraph_cs/README.md`](langgraph_cs/README.md)。
 

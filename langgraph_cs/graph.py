@@ -18,7 +18,7 @@
   - add_conditional_edges(源节点, 路由函数, {返回值: 目标节点}):
         阶段 3 用它替代阶段 1/2 的 rag->agent 直连，实现意图路由 + 低置信度降级。
         路由函数（route_by_intent）返回下一个节点名，必须落在映射的 value 集合里。
-        —— 这一整套就对应 EchoMind agent_orchestrator.py 手写的"意图路由 + 降级路由"。
+        —— 这一整套就对应旧版手写 agent_orchestrator.py 里的"意图路由 + 降级路由"。
   - compile(checkpointer=...)：挂"检查点存储"，让图能按 thread_id 记住每轮状态。
         阶段 3 的 human-in-the-loop（escalation 节点 interrupt/resume）也**依赖**它：
         没有 checkpointer 就无法保存中断点、无法 Command(resume=...) 恢复。
@@ -95,7 +95,7 @@ def build_graph(checkpointer=None):
     builder.add_node("intent", intent_node)
     builder.add_node("rag", rag_node)
 
-    # 阶段 3：四个专职 Agent 节点（对照 EchoMind 的多 Agent）。
+    # 阶段 3：四个专职 Agent 节点（对照旧版手写多 Agent）。
     builder.add_node("technical_agent", technical_agent)
     builder.add_node("billing_agent", billing_agent)
     builder.add_node("general_agent", general_agent)

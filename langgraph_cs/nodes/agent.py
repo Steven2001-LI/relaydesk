@@ -3,7 +3,7 @@
 
 阶段 1/2 是"一个 agent_node + 按 intent 换 system prompt"。
 阶段 3 拆成多个**专职 Agent 节点**——technical / billing / general——再由 graph.py 用
-`add_conditional_edges` 按意图路由到对应节点。对照 EchoMind 的 agents/agent_orchestrator.py：
+`add_conditional_edges` 按意图路由到对应节点。对照旧版手写的 agents/agent_orchestrator.py：
 那里有 GeneralAgent / TechnicalAgent / BillingAgent 多个 Agent 类 + Orchestrator 做路由/降级；
 这里用 LangGraph 原生的"多节点 + 条件边"表达同一套思路。
 
@@ -26,7 +26,7 @@ from langgraph_cs.config import build_llm
 
 logger = logging.getLogger(__name__)
 
-# 意图 -> system prompt 的映射（对照 EchoMind 各 Agent 的 system_prompt）。
+# 意图 -> system prompt 的映射（对照旧版各 Agent 的 system_prompt）。
 # 这些 prompt 沿用阶段 1/2 的写法，现在被各专职节点按需取用。
 _PROMPTS = {
     "technical": "你是技术支持专家。专注故障排查、错误诊断、配置问题，给出清晰的分步解决方案。",
@@ -93,7 +93,7 @@ def _run_agent(state, system_prompt: str, agent_name: str) -> dict:
     return {"messages": [AIMessage(content=resp.content)]}
 
 
-# ---- 专职 Agent 节点（对照 EchoMind 的 TechnicalAgent / BillingAgent / GeneralAgent）----
+# ---- 专职 Agent 节点（对照旧版 TechnicalAgent / BillingAgent / GeneralAgent）----
 
 def technical_agent(state) -> dict:
     """技术支持 Agent：故障排查、错误诊断、配置问题。"""

@@ -26,7 +26,7 @@ DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 # 缺 key 时这些为 None，本地评测（answer_eval）不受影响、照样能跑。
 LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING")
 LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
-LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "echomind-langgraph")
+LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "relaydesk-langgraph")
 
 
 def build_llm(temperature: float = 0.3) -> ChatOpenAI:

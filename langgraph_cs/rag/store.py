@@ -15,8 +15,8 @@ store —— 向量库（Chroma）的灌库与检索器构造。
   按条目切天然不会超长，不必再担心截断。
 
 为什么持久目录单独放 langgraph_cs/data/chroma_rag/？
-  避免污染 EchoMind 主项目的 data/chroma（那是另一套 collection 与 embedding）。
-  本目录是教学项目自己的库，互不干扰。
+  避免污染其他项目或旧版实验的 data/chroma（可能是另一套 collection 与 embedding）。
+  本目录是 RelayDesk 自己的库，互不干扰。
 """
 import logging
 import re
@@ -32,11 +32,11 @@ logger = logging.getLogger(__name__)
 # 本模块所在的 langgraph_cs/ 目录。
 _BASE_DIR = Path(__file__).parent.parent
 
-# Chroma 持久化目录（单独一份，不碰 EchoMind 主项目的 data/chroma）。
+# Chroma 持久化目录（单独一份，不碰其他项目或旧版实验的 data/chroma）。
 PERSIST_DIR = _BASE_DIR / "data" / "chroma_rag"
 # 默认的 FAQ 数据目录。
 DEFAULT_DOCS_DIR = _BASE_DIR / "data" / "faq"
-# collection 名（与 EchoMind 主库区分）。
+# collection 名（与其他 Chroma collection 区分）。
 COLLECTION_NAME = "cs_faq"
 
 # 条目标题的解析正则：匹配形如
