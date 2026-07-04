@@ -495,12 +495,52 @@ body {
 .btn-send:active { transform: scale(.94); }
 .btn-send:disabled { opacity: .45; cursor: not-allowed; filter: none; }
 
+/* 审批模式：输入框作为备注，按钮显式表达 resume 决定。 */
+.approval-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.approval-actions[hidden] { display: none; }
+.btn-approval {
+  min-width: 82px;
+  height: 34px;
+  border-radius: var(--radius-tag);
+  border: 1px solid var(--seat-line);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s, filter .15s, transform .12s, background .15s;
+}
+.btn-approve {
+  color: #0b1020;
+  background: linear-gradient(135deg, #e09238, var(--seat));
+}
+.btn-reject {
+  color: var(--seat-soft);
+  background: rgba(255, 180, 84, .08);
+}
+.btn-approval:hover { filter: brightness(1.06); }
+.btn-approval:active { transform: scale(.97); }
+.btn-approval:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  filter: none;
+  transform: none;
+}
+
 /* 坐席模式：输入区切琥珀皮肤（克制） */
 .composer.seat-mode { background: var(--seat-bg); border-top-color: var(--seat-line); }
 .composer.seat-mode .input { border-color: var(--seat-line); background: rgba(255, 180, 84, .06); }
 .composer.seat-mode .input:focus,
 .composer.seat-mode .input:focus-visible { border-color: var(--seat); }
 .composer.seat-mode .btn-send { background: linear-gradient(135deg, #e09238, var(--seat)); }
+
+.composer.approval-mode { background: var(--seat-bg); border-top-color: var(--seat-line); }
+.composer.approval-mode .input { border-color: var(--seat-line); background: rgba(255, 180, 84, .06); }
+.composer.approval-mode .input:focus,
+.composer.approval-mode .input:focus-visible { border-color: var(--seat); }
 
 /* ════════════════════════════════════════════════════════════
    signature：决策轨迹 pipeline（右侧侧栏，调试面板化）
@@ -714,7 +754,7 @@ body {
   outline-offset: 2px;
   border-radius: 4px;
 }
-.btn-send:focus-visible, .btn-ghost:focus-visible { outline-offset: 3px; }
+.btn-send:focus-visible, .btn-ghost:focus-visible, .btn-approval:focus-visible { outline-offset: 3px; }
 
 /* ── 滚动条 ── */
 .messages::-webkit-scrollbar,

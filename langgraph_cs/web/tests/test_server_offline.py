@@ -57,10 +57,15 @@ class FakeGraph:
         self._resume_seq = resume_seq or []
         self._state_values = state_values or {}
         self._raise = raise_on_stream
+        self.inputs = []
+        self.resume_values = []
 
     def stream(self, graph_input, config=None, stream_mode=None):
         if self._raise:
             raise RuntimeError("模拟 LLM/检索炸了")
+        self.inputs.append(graph_input)
+        if isinstance(graph_input, Command):
+            self.resume_values.append(graph_input.resume)
         seq = self._resume_seq if isinstance(graph_input, Command) else self._normal_seq
         for item in seq:
             yield item
@@ -324,6 +329,7 @@ def test_chat_interrupt_then_resume():
     assert "interrupt" in t1, t1
     assert "done" not in t1, "中断时不应发 done（done 留给 resume）"
     inter = next(e for e in e1 if e["type"] == "interrupt")
+    assert inter["kind"] == "seat"
     assert "转人工" in inter["prompt"]
     assert inter["user_message"] == "我要转人工"
 
@@ -336,7 +342,118 @@ def test_chat_interrupt_then_resume():
     assert "坐席小李" in seat_text
     done = next(e for e in e2 if e["type"] == "done")
     assert done["escalated"] is True
+    assert fake.resume_values == ["您好，我是坐席小李"], fake.resume_values
     print("✓ interrupt->resume：chat 发 interrupt（无 done），resume 发坐席 token + done(escalated=True)")
+
+
+def test_chat_approval_interrupt_payload():
+    """审批中断：interrupt 事件透传 kind/action/params/prompt，且中断时不发 done。"""
+    interrupt_obj = Interrupt(
+        value={
+            "kind": "approval",
+            "action": "create_refund_ticket",
+            "params": {
+                "user_id": "user_003",
+                "order_id": "ORD-20260506-003",
+                "reason": "尺码不合适",
+            },
+            "prompt": "待人工审批：user_003 申请退款 订单 ORD-20260506-003（原因：尺码不合适）",
+        }
+    )
+    normal_seq = [
+        ("updates", {"intent": {"intent": "billing", "confidence": 0.96}}),
+        ("updates", {"rag": {"retrieved_docs": []}}),
+        ("updates", {"__interrupt__": (interrupt_obj,)}),
+    ]
+    fake = FakeGraph(
+        normal_seq=normal_seq,
+        state_values={"intent": "billing", "confidence": 0.96, "retrieved_docs": [], "escalated": False},
+    )
+    client = _make_client(fake)
+
+    resp = client.post("/api/chat", json={"message": "我要退款", "thread_id": "t-approval"})
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert "interrupt" in types, types
+    assert "done" not in types, types
+    inter = next(e for e in events if e["type"] == "interrupt")
+    assert inter["kind"] == "approval", inter
+    assert inter["action"] == "create_refund_ticket", inter
+    assert inter["params"]["order_id"] == "ORD-20260506-003", inter
+    assert "待人工审批" in inter["prompt"], inter
+    print("✓ approval interrupt：SSE 透传 kind/action/params/prompt，且中断时不发 done")
+
+
+def test_approval_resume_uses_structured_resume_and_done_not_escalated():
+    """审批 resume：传结构化 dict 给图；done.escalated=false。"""
+    resume_seq = [
+        # resume 恢复时可能先跑 tools 节点，因此 tool done 可早于 route 到达。
+        ("updates", {"tools": {"messages": [
+            ToolMessage(content='{"created": true}', name="create_refund_ticket", tool_call_id="call_refund_1")
+        ]}}),
+        ("messages", (_chunk("已", id="lc_run--approval-answer"), {"langgraph_node": "billing_agent"})),
+        ("messages", (_chunk("受理", id="lc_run--approval-answer"), {"langgraph_node": "billing_agent"})),
+        ("updates", {"billing_agent": {"messages": [_full("已受理", id="approval-final-replay")]}}),
+    ]
+    fake = FakeGraph(
+        normal_seq=[],
+        resume_seq=resume_seq,
+        state_values={"intent": "billing", "confidence": 0.96, "retrieved_docs": [], "escalated": False},
+    )
+    client = _make_client(fake)
+
+    resp = client.post(
+        "/api/resume",
+        json={"thread_id": "t-approval", "approval": {"approved": True, "note": "请尽快处理"}},
+    )
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert fake.resume_values == [{"approved": True, "note": "请尽快处理"}], fake.resume_values
+    assert "tool" in types and "route" in types and "token" in types, types
+    assert types.index("tool") < types.index("route"), types
+    tokens = "".join(e["text"] for e in events if e["type"] == "token")
+    assert tokens == "已受理", tokens
+    done = next(e for e in events if e["type"] == "done")
+    assert done["escalated"] is False, done
+    print("✓ approval resume：结构化 resume 传入图；tool 可早于 route；done.escalated=false")
+
+
+def test_approval_resume_rejects_non_bool_approved():
+    """审批 resume 的 approved 必须是 bool，1/'yes' 等真值不允许通过 server 校验。"""
+    fake = FakeGraph(normal_seq=[])
+    client = _make_client(fake)
+    resp = client.post(
+        "/api/resume",
+        json={"thread_id": "t-approval", "approval": {"approved": 1, "note": "yes"}},
+    )
+    events = _parse_sse(resp.text)
+    assert events and events[0]["type"] == "error", events
+    assert fake.resume_values == [], fake.resume_values
+    print("✓ approval resume：approved 非 bool 时返回 error，不调用图 resume")
+
+
+def test_approval_resume_rejects_malformed_requests():
+    """
+    resume 协议加固：三类畸形请求都必须 error 且不触碰图。
+      1) seat_reply 与 approval 同传（歧义：静默取舍会掩盖前端 bug，
+         且 str resume 会被审批工具按"非 dict -> 驳回"处理，批准被反转成驳回）；
+      2) approval 不是对象（如 "yes"）；
+      3) approval.note 不是字符串（任意 JSON 值会被 str() 成 repr 注入工单 detail）。
+    """
+    cases = [
+        ({"thread_id": "t-x", "seat_reply": "hi", "approval": {"approved": True}}, "二选一"),
+        ({"thread_id": "t-x", "approval": "yes"}, "对象"),
+        ({"thread_id": "t-x", "approval": {"approved": True, "note": {"evil": 1}}}, "字符串"),
+    ]
+    for body, keyword in cases:
+        fake = FakeGraph(normal_seq=[])
+        client = _make_client(fake)
+        resp = client.post("/api/resume", json=body)
+        events = _parse_sse(resp.text)
+        assert events and events[0]["type"] == "error", (body, events)
+        assert keyword in events[0]["message"], (keyword, events[0])
+        assert fake.resume_values == [], (body, fake.resume_values)
+    print("✓ approval resume 加固：同传歧义 / 非对象 / note 非字符串 均 error 且不触碰图")
 
 
 def test_chat_error_event_on_exception():
@@ -367,6 +484,10 @@ def _run_all():
         test_chat_dedups_resent_agent_message,
         test_tool_call_stream_events_and_final_answer_dedup,
         test_chat_interrupt_then_resume,
+        test_chat_approval_interrupt_payload,
+        test_approval_resume_uses_structured_resume_and_done_not_escalated,
+        test_approval_resume_rejects_non_bool_approved,
+        test_approval_resume_rejects_malformed_requests,
         test_chat_error_event_on_exception,
         test_missing_params_error,
     ]

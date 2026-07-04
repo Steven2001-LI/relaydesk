@@ -21,6 +21,7 @@ invoke 的返回结果里会带 "__interrupt__"。这里检测到后，提示并
 再用 graph.invoke(Command(resume=<人工输入>)) 恢复，图把这段人工回复作为最终回复继续到 END。
 试一句"我要转人工"即可体验：程序会要求你以坐席身份输入一句回复。
 """
+import json
 import logging
 import os
 
@@ -38,14 +39,70 @@ def _is_interrupted(result) -> bool:
     return isinstance(result, dict) and "__interrupt__" in result
 
 
-def _interrupt_prompt(result) -> str:
-    """从中断结果里取出要展示给人工坐席的提示文本（兜底给个默认提示）。"""
+def _interrupt_payload(result) -> dict:
+    """从中断结果里取出 payload；缺 kind 时按旧版转人工 seat 兼容。"""
     interrupts = result.get("__interrupt__") or []
     if interrupts:
         value = interrupts[0].value
         if isinstance(value, dict):
-            return value.get("prompt", "需要人工处理，请输入回复：")
-    return "需要人工处理，请输入回复："
+            params = value.get("params") or {}
+            if not isinstance(params, dict):
+                params = {}
+            # 统一用 `or` 兜底：显式传 None 的畸形字段也回落默认值（与 server 版一致）。
+            return {
+                "kind": value.get("kind") or "seat",
+                "action": value.get("action") or "",
+                "params": params,
+                "prompt": value.get("prompt") or "需要人工处理，请输入回复：",
+                "user_message": value.get("user_message") or "",
+            }
+    return {"kind": "seat", "prompt": "需要人工处理，请输入回复：", "user_message": ""}
+
+
+# 决策词表：首词命中即判定。中文 CLI 常见全角标点/全角空格先归一化再切分。
+_APPROVE_WORDS = {"y", "yes", "批准", "同意", "approve", "approved"}
+_REJECT_WORDS = {"n", "no", "驳回", "拒绝", "reject", "rejected"}
+
+
+def _parse_approval_input(raw: str):
+    """
+    解析一条审批输入 -> {"approved": bool, "note": str}；无法识别返回 None（调用方重新询问）。
+
+    容错点（真实中文输入习惯）：全角空格、全角逗号/句号/叹号等都当作分隔符，
+    所以 "y，请尽快处理" / "同意！" / "n　资料不全" 都能正确切出决策词 + 备注。
+    识别不了的输入**不静默驳回**——静默驳回会把审批人的批准意图反转掉。
+    """
+    normalized = (raw or "").replace("　", " ")
+    for ch in "，。！？：；、,.!?:;":
+        normalized = normalized.replace(ch, " ")
+    head, _, rest = normalized.strip().partition(" ")
+    decision = head.strip().lower()
+    note = rest.strip()
+    if decision in _APPROVE_WORDS:
+        return {"approved": True, "note": note}
+    if decision in _REJECT_WORDS:
+        return {"approved": False, "note": note}
+    return None
+
+
+def _read_approval_resume(payload: dict) -> dict:
+    """读取 CLI 审批输入，返回 create_refund_ticket 约定的结构化 resume。"""
+    prompt = payload.get("prompt") or "需要人工审批："
+    params = payload.get("params") or {}
+    print(f"\n>>> {prompt}")
+    if params:
+        print(">>> 审批参数：" + json.dumps(params, ensure_ascii=False))
+    while True:
+        try:
+            raw = input("审批(y=批准 / n=驳回，空格后可附备注): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print(">>> 输入中断，按驳回处理。")
+            return {"approved": False, "note": "坐席未审批"}
+        parsed = _parse_approval_input(raw)
+        if parsed is not None:
+            return parsed
+        # 无法识别时重新询问，而不是静默驳回（那会反转审批人的意图且毫无反馈）。
+        print(">>> 未识别的审批指令，请以 y 或 n 开头（例：y 已电话核实）。")
 
 
 def _print_reply(result) -> None:
@@ -87,13 +144,17 @@ def main() -> None:
         # human-in-the-loop：若图停在 interrupt，提示并读取人工坐席输入，再 resume 继续。
         # 用 while 兜住"理论上可能连续多次中断"的情况（本图只会中断一次）。
         while _is_interrupted(result):
-            print(f"\n>>> {_interrupt_prompt(result)}")
-            try:
-                human_reply = input("坐席: ").strip()
-            except (EOFError, KeyboardInterrupt):
-                human_reply = "（坐席未回复）"
-            # Command(resume=...) 恢复图：resume 的值会成为 escalation_node 里 interrupt() 的返回值。
-            result = graph.invoke(Command(resume=human_reply), config=config)
+            payload = _interrupt_payload(result)
+            if payload.get("kind") == "approval":
+                resume_value = _read_approval_resume(payload)
+            else:
+                print(f"\n>>> {payload.get('prompt') or '需要人工处理，请输入回复：'}")
+                try:
+                    resume_value = input("坐席: ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    resume_value = "（坐席未回复）"
+            # Command(resume=...) 恢复图：resume 的值会成为 interrupt() 的返回值。
+            result = graph.invoke(Command(resume=resume_value), config=config)
 
         _print_reply(result)
 

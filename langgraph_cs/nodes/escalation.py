@@ -51,6 +51,7 @@ def escalation_node(state) -> dict:
     # 第一次执行到这里会"抛出"中断暂停；resume 后再执行到这里则直接返回人工输入的值。
     human_reply = interrupt(
         {
+            "kind": "seat",
             "prompt": _ESCALATION_PROMPT,
             "user_message": user_text,
         }

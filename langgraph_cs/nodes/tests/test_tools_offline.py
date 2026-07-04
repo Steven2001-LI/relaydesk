@@ -95,41 +95,102 @@ def test_refund_status_hit_miss_error():
     print("✓ refund_status：命中 / 未命中 found=false / 异常 error JSON")
 
 
-def test_create_refund_ticket_hit_miss_error():
-    restore = _patch(
-        tools_mod.business_db,
-        "create_ticket",
-        lambda user_id, ticket_type, detail: {
+def test_create_refund_ticket_approval_hit_miss_error():
+    calls = []
+
+    def fake_create_ticket(user_id, ticket_type, detail):
+        calls.append({"user_id": user_id, "ticket_type": ticket_type, "detail": detail})
+        return {
             "ticket_id": "TKT-1",
             "user_id": user_id,
             "ticket_type": ticket_type,
             "status": "待审批",
             "detail": detail,
-        },
-    )
+        }
+
+    restore_create = _patch(tools_mod.business_db, "create_ticket", fake_create_ticket)
+    restore_interrupt = _patch(tools_mod, "interrupt", lambda payload: {"approved": True, "note": "请尽快处理"})
     try:
         hit = _call(
             tools_mod.create_refund_ticket,
             {"user_id": "user_001", "order_id": "ORD-1", "reason": "商品损坏"},
         )
+    finally:
+        restore_interrupt()
+        restore_create()
+
+    restore_interrupt = _patch(tools_mod, "interrupt", lambda payload: (_ for _ in ()).throw(AssertionError("缺参不应触发审批")))
+    try:
         miss = _call(tools_mod.create_refund_ticket, {"user_id": "user_001", "order_id": "ORD-1"})
     finally:
-        restore()
+        restore_interrupt()
 
-    restore = _patch(tools_mod.business_db, "create_ticket", _boom)
+    restore_create = _patch(tools_mod.business_db, "create_ticket", _boom)
+    restore_interrupt = _patch(tools_mod, "interrupt", lambda payload: {"approved": True, "note": ""})
     try:
         err = _call(
             tools_mod.create_refund_ticket,
             {"user_id": "user_001", "order_id": "ORD-1", "reason": "商品损坏"},
         )
     finally:
-        restore()
+        restore_interrupt()
+        restore_create()
 
     assert hit["found"] is True and hit["ticket"]["ticket_type"] == "refund", hit
+    assert hit["approved"] is True, hit
     assert "ORD-1" in hit["ticket"]["detail"], hit
+    assert "审批备注：请尽快处理" in hit["ticket"]["detail"], hit
+    assert len(calls) == 1, calls
     assert miss["found"] is False and "reason" in miss["missing"], miss
     assert "error" in err, err
-    print("✓ create_refund_ticket：创建 / 缺字段 found=false / 异常 error JSON")
+    print("✓ create_refund_ticket：审批通过才创建 / 缺字段不审批 / 异常 error JSON")
+
+
+def test_create_refund_ticket_rejects_non_approved_resume():
+    calls = []
+    restore_create = _patch(
+        tools_mod.business_db,
+        "create_ticket",
+        lambda user_id, ticket_type, detail: calls.append((user_id, ticket_type, detail)),
+    )
+    try:
+        restore_interrupt = _patch(tools_mod, "interrupt", lambda payload: {"approved": False, "note": "资料不全"})
+        try:
+            rejected = _call(
+                tools_mod.create_refund_ticket,
+                {"user_id": "user_001", "order_id": "ORD-1", "reason": "商品损坏"},
+            )
+        finally:
+            restore_interrupt()
+
+        restore_interrupt = _patch(tools_mod, "interrupt", lambda payload: {"approved": 1, "note": "非严格布尔"})
+        try:
+            loose_truthy = _call(
+                tools_mod.create_refund_ticket,
+                {"user_id": "user_001", "order_id": "ORD-1", "reason": "商品损坏"},
+            )
+        finally:
+            restore_interrupt()
+
+        restore_interrupt = _patch(tools_mod, "interrupt", lambda payload: "yes")
+        try:
+            non_dict = _call(
+                tools_mod.create_refund_ticket,
+                {"user_id": "user_001", "order_id": "ORD-1", "reason": "商品损坏"},
+            )
+        finally:
+            restore_interrupt()
+    finally:
+        restore_create()
+
+    assert rejected["created"] is False and rejected["rejected"] is True, rejected
+    assert rejected["note"] == "资料不全", rejected
+    assert loose_truthy["created"] is False and loose_truthy["rejected"] is True, loose_truthy
+    assert loose_truthy["note"] == "非严格布尔", loose_truthy
+    assert non_dict["created"] is False and non_dict["rejected"] is True, non_dict
+    assert non_dict["note"] == "yes", non_dict
+    assert calls == [], calls
+    print("✓ create_refund_ticket：驳回 / approved=1 / 非 dict resume 均不落库")
 
 
 def test_create_ticket_hit_miss_error():
@@ -181,7 +242,8 @@ def _run_all():
         test_query_bill_hit_miss_error,
         test_query_bill_by_user_id,
         test_refund_status_hit_miss_error,
-        test_create_refund_ticket_hit_miss_error,
+        test_create_refund_ticket_approval_hit_miss_error,
+        test_create_refund_ticket_rejects_non_approved_resume,
         test_create_ticket_hit_miss_error,
         test_check_service_status_hit_error,
     ]

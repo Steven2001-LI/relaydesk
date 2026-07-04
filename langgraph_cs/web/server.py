@@ -149,20 +149,35 @@ def _rag_sources(graph, config, delta=None) -> list:
 
 def _interrupt_payload(chunk) -> dict:
     """
-    从 updates 里的 {"__interrupt__": (Interrupt(value={...}),)} 取出坐席提示。
+    从 updates 里的 {"__interrupt__": (Interrupt(value={...}),)} 取出中断载荷。
 
     chunk["__interrupt__"] 是 Interrupt 对象的元组；取第一个的 .value（dict），
-    里面带 escalation_node 写的 {"prompt", "user_message"}。兜底给默认提示。
+    按 kind 区分 seat（转人工聊天）与 approval（敏感操作审批）。
+    缺 kind 时按 seat 兼容旧 payload；缺字段给默认值。
     """
     interrupts = chunk.get("__interrupt__") or ()
     if interrupts:
         value = getattr(interrupts[0], "value", None)
         if isinstance(value, dict):
+            params = value.get("params") or {}
+            if not isinstance(params, dict):
+                params = {}
+            # 统一用 `or` 兜底：显式传 None 的畸形字段（如 "prompt": None）也回落默认值，
+            # 与 params 的 isinstance 防御保持同一强度。
             return {
-                "prompt": value.get("prompt", _DEFAULT_INTERRUPT_PROMPT),
-                "user_message": value.get("user_message", ""),
+                "kind": value.get("kind") or "seat",
+                "action": value.get("action") or "",
+                "params": params,
+                "prompt": value.get("prompt") or _DEFAULT_INTERRUPT_PROMPT,
+                "user_message": value.get("user_message") or "",
             }
-    return {"prompt": _DEFAULT_INTERRUPT_PROMPT, "user_message": ""}
+    return {
+        "kind": "seat",
+        "action": "",
+        "params": {},
+        "prompt": _DEFAULT_INTERRUPT_PROMPT,
+        "user_message": "",
+    }
 
 
 def _tool_call_refs(msg) -> list[tuple[str, str]]:
@@ -215,7 +230,7 @@ def _stream_graph(graph_input, config):
 
     chat 与 resume 共用它 —— 唯一区别是 graph_input：
       - chat   传 {"messages": [HumanMessage(...)]}
-      - resume 传 Command(resume=<坐席输入>)
+      - resume 传 Command(resume=<坐席回复或审批结果>)
     两者之后的事件协议完全一致（route/token/interrupt/done），所以抽成一份（见 code-reuse 指南）。
 
     事件协议（每条都是 `data: {"type": ...}\n\n`）：
@@ -224,7 +239,8 @@ def _stream_graph(graph_input, config):
       route     {agent}                        —— 路由落点（专职节点名）
       tool      {name, status}                 —— 工具调用开始/完成（前端本阶段忽略）
       token     {text}                         —— 专职 Agent 增量 token（打字机）
-      interrupt {prompt, user_message}         —— 命中转人工，图已暂停；前端切坐席模式
+      interrupt {kind, action, params, prompt, user_message}
+                                              —— 命中中断，图已暂停；前端按 kind 切坐席/审批模式
       done      {escalated}                    —— 本轮收尾
       error     {message}                      —— 任意异常（不让请求 500 崩）
 
@@ -395,18 +411,56 @@ def build_app() -> FastAPI:
     @app.post("/api/resume")
     async def resume(request: Request):
         """
-        转人工后恢复图。入参 JSON：{thread_id: str, seat_reply: str}
-        用 Command(resume=seat_reply) 续跑，SSE 把坐席回复(token)与 done(escalated) 吐回。
+        中断后恢复图。
+          - 转人工：{thread_id: str, seat_reply: str}
+          - 审批：  {thread_id: str, approval: {approved: bool, note: str}}
+        用 Command(resume=...) 续跑，SSE 把后续 token/tool/done 吐回。
+
+        信任边界（demo 限定，评审已记录）：本端点与 /api/chat 共用无鉴权的
+        thread_id，发起对话的客户端可以自己 resume——生产环境必须把坐席/审批
+        拆到带鉴权的独立端，此处不做。
         """
         body = await request.json()
         thread_id = (body.get("thread_id") or "").strip()
         seat_reply = body.get("seat_reply")
-        if not thread_id or seat_reply is None:
+        approval = body.get("approval")
+        if not thread_id:
             return _sse_response(
-                iter([_sse("error", message="缺少 thread_id 或 seat_reply。")])
+                iter([_sse("error", message="缺少 thread_id。")])
+            )
+        if seat_reply is not None and approval is not None:
+            # 两种 resume 语义互斥：歧义请求直接拒绝，不做静默取舍
+            # （若静默取 seat_reply，字符串会被审批工具按"非 dict -> 驳回"处理，
+            #   审批人明明批准却被驳回，前端 bug 会被完全掩盖）。
+            return _sse_response(
+                iter([_sse("error", message="seat_reply 与 approval 只能二选一。")])
+            )
+        if seat_reply is not None:
+            resume_value = str(seat_reply)
+        elif approval is not None:
+            if not isinstance(approval, dict):
+                return _sse_response(
+                    iter([_sse("error", message="approval 必须是对象：{approved: bool, note?: str}。")])
+                )
+            if type(approval.get("approved")) is not bool:
+                return _sse_response(
+                    iter([_sse("error", message="approval.approved 必须是 bool。")])
+                )
+            note = approval.get("note")
+            if note is not None and not isinstance(note, str):
+                return _sse_response(
+                    iter([_sse("error", message="approval.note 必须是字符串。")])
+                )
+            resume_value = {
+                "approved": approval["approved"],
+                "note": (note or "").strip(),
+            }
+        else:
+            return _sse_response(
+                iter([_sse("error", message="缺少 seat_reply 或 approval。")])
             )
         config = {"configurable": {"thread_id": thread_id}}
-        return _sse_response(_stream_graph(Command(resume=str(seat_reply)), config))
+        return _sse_response(_stream_graph(Command(resume=resume_value), config))
 
     # 静态资源（app.js / style.css 等）挂在 /static 下。
     # 放在路由注册之后，避免 StaticFiles 抢占根路径。

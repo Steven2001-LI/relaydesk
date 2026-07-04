@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 
 from langchain_core.tools import tool
+from langgraph.types import interrupt
 
 from langgraph_cs.business import db as business_db
 
@@ -74,19 +75,43 @@ def create_refund_ticket(user_id: str = "", order_id: str = "", reason: str = ""
     """
     用户明确要求为某个订单申请退款、退货、退款跟进时调用。
 
-    必须先拿到 user_id、order_id 和退款原因；本工具会直接创建 refund 工单，
-    初始状态为"待审批"。本阶段不做人工审批 interrupt。
+    必须先拿到 user_id、order_id 和退款原因；参数齐备后先触发人工审批 interrupt，
+    只有审批 resume 严格返回 {"approved": True, ...} 才真正创建 refund 工单。
     """
+    user_id = (user_id or "").strip()
+    order_id = (order_id or "").strip()
+    reason = (reason or "").strip()
+    missing = [name for name, value in {"user_id": user_id, "order_id": order_id, "reason": reason}.items() if not value]
+    if missing:
+        return _json({"found": False, "reason": "缺少必要信息", "missing": missing})
+
+    # Demo 假设同一轮只审批一笔退款；若模型并行发起多个 create_refund_ticket，
+    # 会产生多个 interrupt，resume 语义不在本步覆盖范围。
+    # resume 后 ToolNode 会重跑同批工具：只读工具（如 refund_status）可能执行两次但无害；
+    # billing 工具集中唯一写操作是本函数，且写入被审批结果门控，因此不会产生重复副作用。
+    resume = interrupt(
+        {
+            "kind": "approval",
+            "action": "create_refund_ticket",
+            "params": {"user_id": user_id, "order_id": order_id, "reason": reason},
+            "prompt": f"待人工审批：{user_id} 申请退款 订单 {order_id}（原因：{reason}）",
+        }
+    )
+
+    if not isinstance(resume, dict):
+        note = str(resume) if resume is not None else "人工审批未通过"
+        return _json({"created": False, "rejected": True, "note": note})
+
+    note = str(resume.get("note") or "").strip()
+    if resume.get("approved") is not True:
+        return _json({"created": False, "rejected": True, "note": note or "人工审批未通过"})
+
     try:
-        user_id = (user_id or "").strip()
-        order_id = (order_id or "").strip()
-        reason = (reason or "").strip()
-        missing = [name for name, value in {"user_id": user_id, "order_id": order_id, "reason": reason}.items() if not value]
-        if missing:
-            return _json({"found": False, "reason": "缺少必要信息", "missing": missing})
         detail = f"订单 {order_id} 退款申请：{reason}"
+        if note:
+            detail += f"；审批备注：{note}"
         ticket = business_db.create_ticket(user_id=user_id, ticket_type="refund", detail=detail)
-        return _json({"found": True, "created": True, "ticket": ticket})
+        return _json({"found": True, "created": True, "approved": True, "ticket": ticket})
     except Exception as ex:  # noqa: BLE001
         return _error(ex)
 

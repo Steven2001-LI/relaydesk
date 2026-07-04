@@ -14,14 +14,14 @@
        技术原值降级进整行 title/tooltip，方便演示「可观测」。
     5) 轻量安全 markdown：先转义 HTML，再支持 # 标题 / **bold** / 有序·无序列表 / 换行 / `code`；
        连续有序列表项（含项间空行）合并进同一个 <ol>，靠浏览器自动顺序编号（1.2.3.4.）。
-    6) HITL 坐席模式：收到 interrupt -> pipeline 转琥珀 + 顶部系统条 + 底栏切坐席皮肤；
+    6) HITL 坐席/审批模式：收到 interrupt -> 按 kind 分流，pipeline 转琥珀 + 顶部系统条；
        右栏「转人工三段状态」分段呈现 ①AI 已判断 ②等待坐席接入 ③人工回复；
-       发送走 /api/resume，恢复后把坐席回复作为带琥珀标签的 Agent 气泡显示并退出坐席模式。
+       坐席输入或审批按钮都走 /api/resume，恢复后继续接收图的后续流式事件。
     7) 业务操作：结束会话（=重置/清空+新 thread_id）；重新提问快捷操作挂在每条回答气泡下方。
 
   事件协议（与 server.py _stream_graph 对齐，前端绝不改）：
     meta {intent, confidence} · rag {sources[]} · route {agent} · token {text}
-    interrupt {prompt, user_message} · done {escalated} · error {message}
+    interrupt {kind, action, params, prompt, user_message} · done {escalated} · error {message}
 */
 
 const $ = (sel) => document.querySelector(sel);
@@ -30,6 +30,10 @@ const inputEl = $("#input");
 const sendBtn = $("#btn-send");
 const composerEl = $("#composer");
 const seatBanner = $("#seat-banner");
+const seatBannerTextEl = $("#seat-banner-text");
+const approvalActionsEl = $("#approval-actions");
+const approveBtn = $("#btn-approve");
+const rejectBtn = $("#btn-reject");
 const threadPill = $("#thread-pill");
 const newBtn = $("#btn-new");
 const welcomeEl = $("#welcome");   // 开场气泡（首条用户消息后折叠）
@@ -114,6 +118,7 @@ const LEGACY_THREAD_STORAGE_KEY = "echomind_thread_id";
 const state = {
   threadId: loadThreadId(),
   seatMode: false,    // 是否处于坐席模式（命中 interrupt 后为 true）
+  approvalMode: false, // 是否处于审批模式（敏感操作 interrupt 后为 true）
   busy: false,        // 是否有请求在飞（避免并发发送）
   lastUserText: "",   // 上一条用户消息（供「重新提问」重发）
 };
@@ -439,6 +444,15 @@ function pipelineToSeat() {
   pipelineHintEl.textContent = "需要人工介入 · human-in-the-loop";
 }
 
+// 审批：同样用琥珀态提示"图已暂停"，但不展示转人工三段卡。
+function pipelineToApproval() {
+  for (const name of STAGE_ORDER) {
+    if (stageEls[name].classList.contains("is-active")) setStage(name, "done");
+  }
+  setStage("answer", "seat", "等待人工审批");
+  pipelineHintEl.textContent = "敏感操作审批 · approval";
+}
+
 // ── SSE 解析：把 fetch 的字节流按 `\n\n` 切成事件，回调每条 JSON ──
 async function readSSE(response, onEvent) {
   const reader = response.body.getReader();
@@ -469,6 +483,7 @@ async function readSSE(response, onEvent) {
 function enterSeatMode(prompt) {
   state.seatMode = true;
   seatBanner.hidden = false;
+  seatBannerTextEl.textContent = "已转人工 · 请以坐席身份回复用户";
   composerEl.classList.add("seat-mode");
   inputEl.placeholder = prompt || "以坐席身份回复用户… Enter 发送";
   setStatus("seat", "坐席模式");
@@ -477,15 +492,41 @@ function enterSeatMode(prompt) {
 
 function exitSeatMode() {
   state.seatMode = false;
-  seatBanner.hidden = true;
+  if (!state.approvalMode) seatBanner.hidden = true;
   composerEl.classList.remove("seat-mode");
-  inputEl.placeholder = "输入消息，Enter 发送 · Shift+Enter 换行";
+  if (!state.approvalMode) inputEl.placeholder = "输入消息，Enter 发送 · Shift+Enter 换行";
+}
+
+function enterApprovalMode(payload) {
+  state.approvalMode = true;
+  seatBanner.hidden = false;
+  seatBannerTextEl.textContent = (payload && payload.prompt) || "待人工审批";
+  composerEl.classList.add("approval-mode");
+  approvalActionsEl.hidden = false;
+  sendBtn.disabled = true;
+  approveBtn.disabled = state.busy;
+  rejectBtn.disabled = state.busy;
+  inputEl.placeholder = "审批备注（可选）";
+  setStatus("seat", "审批模式");
+  inputEl.focus();
+}
+
+function exitApprovalMode() {
+  state.approvalMode = false;
+  if (!state.seatMode) seatBanner.hidden = true;
+  composerEl.classList.remove("approval-mode");
+  approvalActionsEl.hidden = true;
+  approveBtn.disabled = state.busy;
+  rejectBtn.disabled = state.busy;
+  sendBtn.disabled = state.busy;
+  if (!state.seatMode) inputEl.placeholder = "输入消息，Enter 发送 · Shift+Enter 换行";
 }
 
 // ── 一次"流式请求"的统一处理：chat 与 resume 共用 ──
 //   bot：当前 Agent 气泡句柄；isResume：resume 时 pipeline 走应答阶段而非整轮重置。
 async function runStream(url, payload, bot, { isResume = false } = {}) {
   let interrupted = false;
+  let failed = false;         // 网络/服务端异常：resume 场景下调用方必须保留中断态 UI 供重试
   let answered = false;       // 是否已收到第一个 token（点亮④）
   try {
     const resp = await fetch(url, {
@@ -497,7 +538,7 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
       bot.setText("网络异常（HTTP " + resp.status + "），请稍后重试。");
       bot.markError();
       setStatus("error", "网络异常");
-      return { interrupted: false };
+      return { interrupted: false, failed: true };
     }
 
     await readSSE(resp, (evt) => {
@@ -551,18 +592,27 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
           break;
         case "interrupt":
           interrupted = true;
-          if (!bot.hasText()) bot.setText("（已转人工，等待坐席接入…）");
+          if (!bot.hasText()) {
+            bot.setText(evt.kind === "approval" ? "（待人工审批，等待处理…）" : "（已转人工，等待坐席接入…）");
+          }
           bot.finish();
-          pipelineToSeat();
-          seatFlowEnter();           // 三段状态卡：点亮 ① AI 已判断 + ② 等待坐席接入
-          enterSeatMode(evt.prompt);
-          addSysLine(evt.prompt || "已转人工，请以坐席身份回复用户");
+          if (evt.kind === "approval") {
+            seatFlowReset();
+            pipelineToApproval();
+            enterApprovalMode(evt);
+            addSysLine(evt.prompt || "待人工审批");
+          } else {
+            pipelineToSeat();
+            seatFlowEnter();         // 三段状态卡：点亮 ① AI 已判断 + ② 等待坐席接入
+            enterSeatMode(evt.prompt);
+            addSysLine(evt.prompt || "已转人工，请以坐席身份回复用户");
+          }
           break;
         case "done":
           bot.finish();
           // ④ 完成（人话整句「生成应答：已完成」）
           if (isResume) {
-            completeStage("answer", "坐席已回复");
+            completeStage("answer", state.approvalMode ? "审批已处理" : "坐席已回复");
           } else if (answered) {
             completeStage("answer", evt.escalated ? "已转人工" : "已完成");
             // P1：回答落地后，把「重新提问」快捷操作挂到该气泡下方。
@@ -570,6 +620,7 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
           }
           break;
         case "error":
+          failed = true;
           bot.setText(evt.message || "出了点问题，请稍后重试。");
           bot.markError();
           setStatus("error", "出错");
@@ -580,11 +631,12 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
     });
   } catch (e) {
     console.error(e);
+    failed = true;
     bot.setText("连接中断，请检查服务是否在运行。");
     bot.markError();
     setStatus("error", "连接中断");
   }
-  return { interrupted };
+  return { interrupted, failed };
 }
 
 // ── 发送（普通用户消息）──────────────────────────────────
@@ -609,20 +661,68 @@ async function sendSeatReply(text) {
   const bot = createBotMessage({ fromSeat: true });
   bot.setSeatTag("人工坐席已接管", "agent=escalation");
   seatFlowReply(text);        // 三段状态卡：点亮 ③ 人工回复 + 填入内容
-  await runStream(
+  const { interrupted, failed } = await runStream(
     "/api/resume",
     { thread_id: state.threadId, seat_reply: text },
     bot,
     { isResume: true }
   );
-  exitSeatMode();
-  setStatus(null, "就绪");
+  // 提交失败：后端图仍停在中断点，保留坐席模式供重试（错误状态已由 runStream 展示）。
+  if (failed) {
+    addSysLine("坐席回复提交失败，请重试");
+    return;
+  }
+  if (!interrupted) {
+    exitSeatMode();
+    setStatus(null, "就绪");
+  } else if (state.approvalMode) {
+    // resume 流内又出现审批中断：收起坐席态，审批 UI 已在流内建好。
+    exitSeatMode();
+  }
+}
+
+// ── 提交审批决定（resume）──────────────────────────────────
+async function sendApprovalDecision(approved) {
+  if (!state.approvalMode || state.busy) return;
+  setBusy(true);
+  const note = inputEl.value.trim();
+  inputEl.value = "";
+  autoGrow();
+  addSysLine((approved ? "审批通过" : "审批驳回") + (note ? "：" + note : ""));
+
+  const bot = createBotMessage();
+  try {
+    const { interrupted, failed } = await runStream(
+      "/api/resume",
+      { thread_id: state.threadId, approval: { approved, note } },
+      bot,
+      { isResume: true }
+    );
+    if (failed) {
+      // 提交失败：后端图仍停在审批中断点。保留审批 UI 与备注供重试，
+      // 不覆盖 runStream 已展示的错误状态。
+      inputEl.value = note;
+      autoGrow();
+      addSysLine("审批提交失败，请重试");
+    } else if (!interrupted) {
+      exitApprovalMode();
+      setStatus(null, "就绪");
+    } else if (state.seatMode) {
+      // resume 流内转成坐席中断：收起审批控件，坐席 UI 已在流内建好。
+      exitApprovalMode();
+    }
+    // interrupted 且仍是审批（连环审批）：流内 enterApprovalMode 已刷新横幅，保持不动。
+  } finally {
+    setBusy(false);
+    inputEl.focus();
+  }
 }
 
 // ── 输入框统一提交入口 ───────────────────────────────────
 async function onSubmit() {
+  if (state.busy || state.approvalMode) return;
   const text = inputEl.value.trim();
-  if (!text || state.busy) return;
+  if (!text) return;
   inputEl.value = "";
   autoGrow();
   setBusy(true);
@@ -640,10 +740,14 @@ async function onSubmit() {
 
 function setBusy(b) {
   state.busy = b;
-  sendBtn.disabled = b;
+  sendBtn.disabled = b || state.approvalMode;
   inputEl.disabled = b;
+  approveBtn.disabled = b;
+  rejectBtn.disabled = b;
   if (b) {
     setStatus("busy", "推理中");
+  } else if (state.approvalMode) {
+    setStatus("seat", "审批模式");
   } else if (!state.seatMode) {
     // 坐席模式下保持 seat 状态指示，非坐席恢复就绪
     setStatus(null, "就绪");
@@ -664,6 +768,7 @@ function resetSession() {
   localStorage.removeItem(LEGACY_THREAD_STORAGE_KEY);
   state.lastUserText = "";
   exitSeatMode();
+  exitApprovalMode();
   resetPipeline();
   seatFlowReset();
   setStatus(null, "就绪");
@@ -678,7 +783,7 @@ function resetSession() {
 
 // ── 重新提问：重发上一条用户消息（坐席模式 / 忙时禁用） ──
 async function onRetry() {
-  if (state.busy || state.seatMode || !state.lastUserText) return;
+  if (state.busy || state.seatMode || state.approvalMode || !state.lastUserText) return;
   const text = state.lastUserText;
   setBusy(true);
   try {
@@ -691,6 +796,8 @@ async function onRetry() {
 
 // ── 事件绑定 ─────────────────────────────────────────────
 sendBtn.addEventListener("click", onSubmit);
+approveBtn.addEventListener("click", () => sendApprovalDecision(true));
+rejectBtn.addEventListener("click", () => sendApprovalDecision(false));
 newBtn.addEventListener("click", resetSession);
 inputEl.addEventListener("input", autoGrow);
 inputEl.addEventListener("keydown", (e) => {

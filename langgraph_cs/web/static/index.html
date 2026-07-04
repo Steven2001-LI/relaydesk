@@ -43,7 +43,7 @@
          低调细长、左对齐，不喧宾夺主。 -->
     <div class="seat-banner" id="seat-banner" hidden>
       <span class="seat-banner-dot" aria-hidden="true"></span>
-      <span class="seat-banner-text">已转人工 · 请以坐席身份回复用户</span>
+      <span class="seat-banner-text" id="seat-banner-text">已转人工 · 请以坐席身份回复用户</span>
     </div>
 
     <!-- ── 主体：左对话区 + 右决策轨迹 ── -->
@@ -76,6 +76,10 @@
                 <path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3 10l12 2-12 2z" />
               </svg>
             </button>
+          </div>
+          <div class="approval-actions" id="approval-actions" hidden>
+            <button class="btn-approval btn-approve" id="btn-approve" type="button">批准</button>
+            <button class="btn-approval btn-reject" id="btn-reject" type="button">驳回</button>
           </div>
           <!-- 「重新提问」已移到每条回答气泡下方做成快捷操作（见 app.js mountRetry），此处不再放置 -->
         </footer>
