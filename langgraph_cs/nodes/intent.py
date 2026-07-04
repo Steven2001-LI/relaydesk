@@ -8,7 +8,8 @@ intent_node —— 意图识别节点。
 
 节点契约：
   输入：完整 state（我们只关心最后一条用户消息）
-  输出：{"intent": ..., "confidence": ...}  —— 只返回要更新的字段
+  输出：{"intent": ..., "confidence": ..., "escalated": False}  —— 只返回要更新的字段
+        每轮在这里复位 escalated，避免转人工后标记随 checkpointer 跨轮残留。
 """
 import json
 import logging
@@ -53,14 +54,18 @@ def _strip_code_fence(text: str) -> str:
 
 def intent_node(state) -> dict:
     user_text = last_user_text(state)
-    llm = build_llm(temperature=0.0)  # 分类要确定性，温度调到 0
 
-    resp = llm.invoke(
-        [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user_text},
-        ]
-    )
+    try:
+        llm = build_llm(temperature=0.0)  # 分类要确定性，温度调到 0
+        resp = llm.invoke(
+            [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": user_text},
+            ]
+        )
+    except Exception as ex:  # noqa: BLE001 教学版统一兜底：意图识别失败 -> 降级路由，不崩图
+        logger.warning("意图识别调用 LLM 失败，降级为 other：%s", ex)
+        return {"intent": "other", "confidence": 0.0, "escalated": False}
 
     # 朴素解析 + 兜底：解析失败就降级为 other（对照旧版的"低置信度降级"思路）。
     intent, confidence = "other", 0.0
@@ -73,4 +78,4 @@ def intent_node(state) -> dict:
         logger.warning("意图解析失败，降级为 other：%s（原始输出：%s）", ex, resp.content)
 
     logger.info("意图识别 -> %s (%.2f)", intent, confidence)
-    return {"intent": intent, "confidence": confidence}
+    return {"intent": intent, "confidence": confidence, "escalated": False}

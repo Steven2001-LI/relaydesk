@@ -15,10 +15,14 @@ import os
 
 import uvicorn
 
+from langgraph_cs.config import require_api_key
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 
 def main() -> None:
+    require_api_key()
+
     host = os.getenv("CS_WEB_HOST", "127.0.0.1")
     port = int(os.getenv("CS_WEB_PORT", "8000"))
     print(f"RelayDesk 客服 Web 演示 ʕ•ᴥ•ʔ  ->  http://{host}:{port}")

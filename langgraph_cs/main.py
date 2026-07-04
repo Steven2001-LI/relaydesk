@@ -27,6 +27,7 @@ import os
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
+from langgraph_cs.config import require_api_key
 from langgraph_cs.graph import build_graph
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -58,6 +59,8 @@ def _print_reply(result) -> None:
 
 
 def main() -> None:
+    require_api_key()
+
     # build_graph() 内部按 CS_CHECKPOINT 选 saver（memory|sqlite），这里只读出来给用户提示。
     graph = build_graph()
     backend = os.getenv("CS_CHECKPOINT", "memory").strip().lower()

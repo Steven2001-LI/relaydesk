@@ -29,19 +29,25 @@ LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
 LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "relaydesk-langgraph")
 
 
+def require_api_key() -> str:
+    """返回 DeepSeek API key；缺失时抛出清晰配置错误。"""
+    api_key = os.getenv("DEEPSEEK_API_KEY")
+    if not api_key or not api_key.strip():
+        raise RuntimeError(
+            "缺少 DEEPSEEK_API_KEY。请复制 langgraph_cs/.env.example 为 langgraph_cs/.env 并填入 key。"
+        )
+    return api_key.strip()
+
+
 def build_llm(temperature: float = 0.3) -> ChatOpenAI:
     """
     构造一个指向 DeepSeek 的 LLM 客户端。
 
     temperature：意图识别用低温度（更确定），自由对话可调高一点。
     """
-    if not DEEPSEEK_API_KEY:
-        raise RuntimeError(
-            "缺少 DEEPSEEK_API_KEY。请复制 .env.example 为 .env 并填入你的 DeepSeek key。"
-        )
     return ChatOpenAI(
         model=DEEPSEEK_MODEL,
-        api_key=DEEPSEEK_API_KEY,
+        api_key=require_api_key(),
         base_url=DEEPSEEK_BASE_URL,
         temperature=temperature,
         timeout=30,
