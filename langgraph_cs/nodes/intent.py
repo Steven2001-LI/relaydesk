@@ -25,9 +25,23 @@ logger = logging.getLogger(__name__)
 # （转人工 / 人工客服 / escalate / 无法处理）——这里交给 LLM 统一识别成一个意图。
 INTENTS = ["greeting", "query", "technical", "billing", "complaint", "request", "escalation", "other"]
 
+# 类别带一行定义：只给类别名时，LLM 会把"查退款进度"分给 query、"申请退款"分给
+# request（真实测过，均以 0.95 高置信路由到无工具的 general_agent），billing 类工具
+# 永远轮不到。边界规则：凡涉及具体订单/账单/退款/发票的，一律 billing 优先。
 _SYSTEM_PROMPT = (
     "你是一个意图分类器。判断用户最后一句话属于以下哪一类，并给出 0~1 的置信度。\n"
-    f"可选类别：{', '.join(INTENTS)}\n"
+    "类别定义：\n"
+    "- greeting: 问候寒暄\n"
+    "- technical: 技术故障、报错、配置、登录异常、服务是否正常等技术支持问题\n"
+    "- billing: 订单、账单、扣费、发票、开票、退款、会员费相关的查询或办理"
+    "（包括查订单状态、查退款进度、申请退款、查扣费记录）\n"
+    "- complaint: 投诉或强烈不满\n"
+    "- escalation: 明确要求人工客服、转人工\n"
+    "- query: 平台功能、政策、流程等一般咨询（不涉及用户具体的订单/账单/工单）\n"
+    "- request: 其他事务办理请求（不属于 technical 和 billing 的）\n"
+    "- other: 无法归入以上类别\n"
+    "边界规则：只要问题涉及具体订单、账单、退款、发票，就选 billing，"
+    "不要选 query 或 request。\n"
     "只输出 JSON，格式：{\"intent\": \"<类别>\", \"confidence\": <数字>}，不要任何多余文字。"
 )
 
