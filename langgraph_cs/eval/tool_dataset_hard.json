@@ -182,6 +182,28 @@
     "rationale": "表面是发票政策，但含真实 bill_id 与具体状态判断，可能需要工具确认。"
   },
   {
+    "id": "hard-explicit-tool-limit-01",
+    "category": "explicit_tool_limit",
+    "question": "就说下退款到账规则，别去查我的单：ORD-20260506-003 到哪一步我自己看得到",
+    "expected": {
+      "should_call": false,
+      "answer_expectation": "用户明确限制不要查单，只要求退款到账规则；即使夹带真实 order_id，也应只依据知识库回答通用规则，不调用 refund_status。"
+    },
+    "note": "billing 泛化样本；旧 prompt 与改后 prompt 在本次 N=5 复查均为 5/5。",
+    "rationale": "不同于“别查系统”的措辞，用“别去查我的单/我自己看得到”表达同一工具限制。"
+  },
+  {
+    "id": "hard-explicit-tool-limit-02",
+    "category": "explicit_tool_limit",
+    "question": "别调工具也别给我建工单，我只想知道 user_004 这种智能门锁蓝牙配对失败通常怎么排查",
+    "expected": {
+      "should_call": false,
+      "answer_expectation": "用户明确限制不要调用工具/不要建工单，应只给通用排查流程；不得调用 create_ticket 或 check_service_status。"
+    },
+    "note": "旧 technical prompt 已能处理该显式限制样本，本步 technical prompt 保持原样；该样本作为回归保护保留。",
+    "rationale": "覆盖 technical agent：文本里有 user_id 和明确故障详情，正常情况下足以建技术工单，但用户显式限制了工具使用。"
+  },
+  {
     "id": "hard-adversarial-negative-03",
     "category": "adversarial_negative",
     "question": "七天无理由流程说下就行，别查系统：ORD-20260625-028 这个现在退到哪我心里有数",
@@ -189,7 +211,7 @@
       "should_call": false,
       "answer_expectation": "应尊重用户“别查系统”的显式限定，只回答七天无理由政策流程；不得因文本夹带真实 order_id 就调用 refund_status（当前系统会误触发，见 known_gap）。"
     },
-    "known_gap": "真实标识诱导 + 无视用户显式约束导致误触发：用户说“别查系统”仍可能调用 refund_status 并泄露状态。属评测发现的真实缺口，本步不修。",
+    "known_gap": "真实标识诱导 + 无视用户显式约束导致误触发已通过 billing prompt 缓解：本次 N=5 复查从旧 prompt 0/5 合规到改后 5/5 合规；仍按 LLM 非确定性继续观察，不宣称确定性修复。",
     "rationale": "用户显式要求不查系统，但文本夹带真实 order_id 和退款状态描述，适合观察误触发工具。"
   }
 ]

@@ -314,24 +314,28 @@ langgraph_cs/.venv/bin/python -m langgraph_cs.eval.tool_eval --hard --write-md
 `payload.params`（等价于 `create_refund_ticket(params)` 被调用）。技术工单 `create_ticket` 会在评测期间
 monkeypatch 成记录器，避免往演示库写脏数据；读工具保持真实业务库。
 
-基线集在 `deepseek-chat`（temperature=0.5，LLM 非确定）下多次复跑为 **22–24/24**（观测 24 / 22 / 22 / 23 / 24；最新单次 23/24）。
+基线集在 `deepseek-chat`（temperature=0.5，LLM 非确定）下多次复跑为 **22–24/24**（观测 24 / 22 / 22 / 23 / 24 / 22；最新单次 22/24）。
 摇摆全落在两条技术类样本：`tech-ticket-01`（模型先调无参 `check_service_status`，是否接着调 `create_ticket` 随采样波动）、
 `missing-id-04`（缺 `user_id` 时或反问、或误触发无参 `check_service_status`）——这与对抗集要抓的“欠信息下过度触发工具”是同一现象。
 基线集样本偏易、已饱和，主要作回归 sanity；`eval/tool_results.md` 是该区间内的单次采样。对抗集真实单次结果详见 `eval/tool_hard_results.md`：
 
 | 指标 | 数字 |
 |---|---:|
-| 总通过率 | **15/15 = 100.0%** |
+| 总通过率 | **16–17/17**（两次复跑观测 17、16） |
 | should-call：该调且调了 / 该调没调 | 7 / 0 |
-| should-call：不该调却调了 / 不该调也没调 | 0 / 8 |
+| should-call：不该调却调了 / 不该调也没调 | 1 / 9 |
 | 正例工具选择准确率 | **100.0%** |
 | tool_hit 子集参数准确率 | **100.0%** |
 
 第 7 步对抗集曾以 **13/15** 暴露 3 类缺口：工具层无鉴权/归属校验、显式“别查系统”仍被真实订单号诱导误触发、
 条件多意图第二步未自动编排。本步已修工具层归属鉴权：`query_bill`、`refund_status`、`create_refund_ticket`、
 `create_ticket` 在注入 `configurable.session_user_id` 时会拒绝跨用户访问；未注入 session 时保留 demo/未认证模式，不默认拒绝。
-最新 hard 回归里 `hard-cross-user-01/02` 均通过安全检查；Web/CLI 登录态接线仍属后续集成范围。`hard-adversarial-negative-03`
-和条件多意图编排仍按 known gap 保留（本次采样没有触发“别查系统”误调用，LLM 非确定）。
+最新 hard 回归里 `hard-cross-user-01/02` 均通过安全检查；Web/CLI 登录态接线仍属后续集成范围。显式限制查询误触发通过
+billing prompt 缓解：`hard-adversarial-negative-03` N=5 合规率从 **0/5** 到 **5/5**；新增 billing 泛化样本
+`hard-explicit-tool-limit-01` 为 **5/5 → 5/5**。`hard-explicit-tool-limit-02` 旧 technical prompt 已能处理，本步
+technical prompt 保持原样，避免 `tech-ticket-01/02` 回归。条件多意图编排仍按 known gap 保留。
+两次 hard 复跑唯一的分差来自 `hard-notfound-01`：模型每次都正确调用 `refund_status` 并如实说明订单不存在，
+只是“未找到”措辞偶尔未命中 `must_state_not_found` 检查词，属答案措辞检查的非确定性、非工具选择回归（正例工具选择恒 100%）。
 
 ### 4. LangSmith：节点级 trace + 数据集 + evaluate（需 key，上 LangChain 云）
 

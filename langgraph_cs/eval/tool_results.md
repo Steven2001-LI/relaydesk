@@ -7,8 +7,8 @@
 
 ## 汇总
 
-- 总通过率：**23/24 = 95.8%**
-- 正例工具选择准确率：**100.0%**
+- 总通过率：**22/24 = 91.7%**
+- 正例工具选择准确率：**92.9%**
 - tool_hit 子集参数准确率：**100.0%**
 
 ## should-call 混淆矩阵
@@ -28,7 +28,7 @@
 | missing_info | 4 | 3 | 0 | 1 | 0 | 0 |
 | policy | 4 | 4 | 0 | 0 | 0 | 0 |
 | smalltalk | 2 | 2 | 0 | 0 | 0 | 0 |
-| technical | 5 | 5 | 5 | 5 | 5 | 5 |
+| technical | 5 | 4 | 5 | 5 | 4 | 4 |
 
 ## 逐条明细
 
@@ -40,12 +40,12 @@
 | refund-status-01 | billing | billing_agent | refund_status({"order_id": "ORD-20260506-003"}) | refund_status({"order_id": "ORD-20260506-003"}) | True | True | True | OK |
 | refund-status-02 | billing | billing_agent | refund_status({"order_id": "ORD-20260518-009"}) | refund_status({"order_id": "ORD-20260518-009"}) | True | True | True | OK |
 | refund-status-03 | billing | billing_agent | refund_status({"order_id": "ORD-20260625-028"}) | refund_status({"order_id": "ORD-20260625-028"}) | True | True | True | OK |
-| refund-create-01 | billing | billing_agent | create_refund_ticket({"order_id": "ORD-20260508-004", "reason": "*", "user_id": "user_004"}) | create_refund_ticket({"order_id": "ORD-20260508-004", "reason": "空气净化器收到后外壳有裂痕，属于商品质量问题，申请退货退款。", "user_id": "user_004"}) → refund_status({"order_id": "ORD-20260508-004"}) | True | True | True | OK |
-| refund-create-02 | billing | billing_agent | create_refund_ticket({"order_id": "ORD-20260520-010", "reason": "*", "user_id": "user_010"}) | create_refund_ticket({"order_id": "ORD-20260520-010", "reason": "订单未发货，不想要了，申请仅退款", "user_id": "user_010"}) → refund_status({"order_id": "ORD-20260520-010"}) | True | True | True | OK |
+| refund-create-01 | billing | billing_agent | create_refund_ticket({"order_id": "ORD-20260508-004", "reason": "*", "user_id": "user_004"}) | create_refund_ticket({"order_id": "ORD-20260508-004", "reason": "空气净化器外壳有裂痕，属于商品质量问题", "user_id": "user_004"}) → refund_status({"order_id": "ORD-20260508-004"}) | True | True | True | OK |
+| refund-create-02 | billing | billing_agent | create_refund_ticket({"order_id": "ORD-20260520-010", "reason": "*", "user_id": "user_010"}) | create_refund_ticket({"order_id": "ORD-20260520-010", "reason": "不想要了，申请仅退款（未发货）", "user_id": "user_010"}) → refund_status({"order_id": "ORD-20260520-010"}) | True | True | True | OK |
 | refund-create-03 | billing | billing_agent | create_refund_ticket({"order_id": "ORD-20260522-011", "reason": "*", "user_id": "user_001"}) | create_refund_ticket({"order_id": "ORD-20260522-011", "reason": "买错型号，申请退货退款", "user_id": "user_001"}) → refund_status({"order_id": "ORD-20260522-011"}) | True | True | True | OK |
-| tech-ticket-01 | technical | technical_agent | create_ticket({"detail": "*", "user_id": "user_004"}) | check_service_status({}) → create_ticket({"detail": "智能门锁 App 蓝牙一直配对失败，无法连接门锁。用户已确认手机蓝牙已开启，但 App 端始终配对不成功。", "user_id": "user_004"}) | True | True | True | OK |
-| tech-ticket-02 | technical | technical_agent | create_ticket({"detail": "*", "user_id": "user_001"}) | check_service_status({}) → create_ticket({"detail": "智能窗帘定时场景配置失败，无法完成定时设置，需要远程协助排查。用户ID：user_001", "user_id": "user_001"}) | True | True | True | OK |
-| tech-ticket-03 | technical | technical_agent | create_ticket({"detail": "*", "user_id": "user_010"}) | check_service_status({}) → create_ticket({"detail": "会议摄像头升级后仍然黑屏，无法正常使用。用户已尝试升级操作，但问题未解决，需要技术支持进一步排查。", "user_id": "user_010"}) | True | True | True | OK |
+| tech-ticket-01 | technical | technical_agent | create_ticket({"detail": "*", "user_id": "user_004"}) | check_service_status({}) | False | False | False | wrong tool: got check_service_status |
+| tech-ticket-02 | technical | technical_agent | create_ticket({"detail": "*", "user_id": "user_001"}) | check_service_status({}) → create_ticket({"detail": "用户反映智能窗帘定时场景配置不了，需要远程协助排查。当前服务大盘各系统正常，无全局故障。", "user_id": "user_001"}) | True | True | True | OK |
+| tech-ticket-03 | technical | technical_agent | create_ticket({"detail": "*", "user_id": "user_010"}) | create_ticket({"detail": "会议摄像头升级后出现黑屏问题，升级前使用情况未知，需进一步排查。设备型号、操作系统版本、升级方式等详细信息待补充。", "user_id": "user_010"}) | True | True | True | OK |
 | service-status-01 | technical | technical_agent | check_service_status({}) | check_service_status({}) | True | True | True | OK |
 | service-status-02 | technical | technical_agent | check_service_status({}) | check_service_status({}) | True | True | True | OK |
 | policy-01 | policy | billing_agent | no tool | - | - | - | True | TN: no tool call |
