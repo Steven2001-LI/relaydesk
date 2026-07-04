@@ -4,6 +4,7 @@
 图的形态（阶段 3：多 Agent 条件路由 + human-in-the-loop）：
 
     START -> intent -> rag -(条件路由 route_by_intent)-> 专职 Agent 节点 -> END
+                                               └─ 有 tool_calls -> tools -> 回到发起 Agent
 
   rag 之后不再固定直连一个 agent，而是用 add_conditional_edges 按意图分流：
       technical  -> technical_agent
@@ -35,12 +36,14 @@ from pathlib import Path
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.prebuilt import ToolNode
 
 from langgraph_cs.nodes.agent import billing_agent, general_agent, technical_agent
 from langgraph_cs.nodes.escalation import escalation_node
 from langgraph_cs.nodes.intent import intent_node
 from langgraph_cs.nodes.rag import rag_node
 from langgraph_cs.nodes.router import route_by_intent
+from langgraph_cs.nodes.tools import ALL_TOOLS
 from langgraph_cs.state import CSState
 
 # SQLite 检查点文件落在 langgraph_cs/data/checkpoints.sqlite（与 chroma 向量库同目录，
@@ -88,6 +91,21 @@ def make_checkpointer():
     return MemorySaver()
 
 
+def route_after_agent(state) -> str:
+    """
+    专职 Agent 回复后决定是否执行工具。
+
+    billing/technical 绑定工具后，模型可能先返回一条带 tool_calls 的 AIMessage；
+    此时进入共享 tools 节点执行工具。若没有 tool_calls，则本轮直接结束。
+    极端情况下模型反复调用工具会由 LangGraph 的 recursion_limit 兜底阻断。
+    """
+    messages = state.get("messages") or []
+    last = messages[-1] if messages else None
+    if getattr(last, "tool_calls", None):
+        return "tools"
+    return END
+
+
 def build_graph(checkpointer=None):
     builder = StateGraph(CSState)
 
@@ -100,6 +118,9 @@ def build_graph(checkpointer=None):
     builder.add_node("billing_agent", billing_agent)
     builder.add_node("general_agent", general_agent)
     builder.add_node("escalation", escalation_node)
+    # ToolNode 使用默认 handle_tool_errors；工具内部也返回 JSON error。
+    # 若模型极端情况下反复请求工具，循环上限交给 LangGraph recursion_limit 兜底。
+    builder.add_node("tools", ToolNode(ALL_TOOLS))
 
     builder.add_edge(START, "intent")
     builder.add_edge("intent", "rag")
@@ -118,9 +139,38 @@ def build_graph(checkpointer=None):
         },
     )
 
-    # 四个专职节点跑完都收束到 END。
-    builder.add_edge("technical_agent", END)
-    builder.add_edge("billing_agent", END)
+    # billing/technical 可能先产生 tool_calls：有工具调用 -> tools；否则 -> END。
+    builder.add_conditional_edges(
+        "technical_agent",
+        route_after_agent,
+        {
+            "tools": "tools",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "billing_agent",
+        route_after_agent,
+        {
+            "tools": "tools",
+            END: END,
+        },
+    )
+
+    # tools 执行完后回到"本轮 intent 对应的发起 Agent"。映射复用 rag 出边的完整四目标，
+    # 避免条件边映射不全导致运行期 KeyError；实际工具路径只会回 billing/technical。
+    builder.add_conditional_edges(
+        "tools",
+        route_by_intent,
+        {
+            "technical_agent": "technical_agent",
+            "billing_agent": "billing_agent",
+            "general_agent": "general_agent",
+            "escalation": "escalation",
+        },
+    )
+
+    # general/escalation 不挂工具，行为保持原样，跑完收束到 END。
     builder.add_edge("general_agent", END)
     builder.add_edge("escalation", END)
 

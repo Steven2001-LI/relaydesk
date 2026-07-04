@@ -23,14 +23,25 @@ import logging
 from langchain_core.messages import AIMessage, SystemMessage
 
 from langgraph_cs.config import build_llm
+from langgraph_cs.nodes.tools import BILLING_TOOLS, TECHNICAL_TOOLS
 
 logger = logging.getLogger(__name__)
 
 # 意图 -> system prompt 的映射（对照旧版各 Agent 的 system_prompt）。
 # 这些 prompt 沿用阶段 1/2 的写法，现在被各专职节点按需取用。
 _PROMPTS = {
-    "technical": "你是技术支持专家。专注故障排查、错误诊断、配置问题，给出清晰的分步解决方案。",
-    "billing": "你是账单服务专家。专注账单查询、退款、发票、订阅，保持准确专业。涉及实际退款说明需人工审核。",
+    "technical": (
+        "你是技术支持专家。专注故障排查、错误诊断、配置问题，给出清晰的分步解决方案。\n"
+        "工具使用规范：涉及用户个人的技术工单、报障记录、服务大盘状态时，必须调用工具查询或创建工单，禁止编造数据；"
+        "缺少 user_id 或故障详情时先向用户询问，不要猜测；"
+        "知识库资料用于回答政策/流程类问题，工具用于处理用户个人数据类问题，两者可结合。"
+    ),
+    "billing": (
+        "你是账单服务专家。专注账单查询、退款、发票、订阅，保持准确专业。涉及实际退款说明需人工审核。\n"
+        "工具使用规范：涉及具体订单、账单、发票、退款进度、退款工单的问题，必须调用工具查询或创建工单，禁止编造数据；"
+        "缺少 user_id、order_id 或 bill_id 等必要标识时先向用户询问，不要猜测；"
+        "知识库资料用于回答政策/流程类问题，工具用于处理用户个人数据类问题，两者可结合。"
+    ),
     "complaint": "你是客户关系专员。先共情安抚用户情绪，再给出可行的解决方案。",
     "greeting": "你是 RelayDesk 智能客服，热情简洁地回应问候并引导用户说明需求。",
 }
@@ -59,7 +70,7 @@ def _build_rag_context(retrieved_docs) -> str:
     return _RAG_INSTRUCTION + "\n\n参考资料：\n" + "\n\n".join(blocks)
 
 
-def _run_agent(state, system_prompt: str, agent_name: str) -> dict:
+def _run_agent(state, system_prompt: str, agent_name: str, tools=None) -> dict:
     """
     所有专职 Agent 节点共用的"调用 LLM 出字"辅助函数。
 
@@ -67,6 +78,7 @@ def _run_agent(state, system_prompt: str, agent_name: str) -> dict:
       - 用传入的 system_prompt 作为人设；
       - 带上 rag 检索到的参考资料（_build_rag_context）；
       - 接完整对话历史调 LLM；
+      - billing/technical 可按需 bind_tools，让模型先查业务库再回答；
       - try/except 兜底：LLM 报错时返回降级消息，不抛出（保证整图不崩）。
 
     这样三个专职节点只需各传一个 prompt，逻辑不复制。
@@ -83,26 +95,27 @@ def _run_agent(state, system_prompt: str, agent_name: str) -> dict:
     messages += list(state["messages"])
 
     try:
-        resp = llm.invoke(messages)
+        runnable = llm.bind_tools(tools) if tools else llm
+        resp = runnable.invoke(messages)
     except Exception as ex:  # noqa: BLE001 教学版统一兜底：单个 Agent 失败 -> 降级回复，不崩图
         logger.warning("%s 调用 LLM 失败，返回兜底回复：%s", agent_name, ex)
         return {"messages": [AIMessage(content=_FALLBACK_REPLY)]}
 
     logger.info("%s 应答完成（参考资料 %d 条）",
                 agent_name, len(state.get("retrieved_docs") or []))
-    return {"messages": [AIMessage(content=resp.content)]}
+    return {"messages": [resp if isinstance(resp, AIMessage) else AIMessage(content=resp.content)]}
 
 
 # ---- 专职 Agent 节点（对照旧版 TechnicalAgent / BillingAgent / GeneralAgent）----
 
 def technical_agent(state) -> dict:
     """技术支持 Agent：故障排查、错误诊断、配置问题。"""
-    return _run_agent(state, _PROMPTS["technical"], "technical_agent")
+    return _run_agent(state, _PROMPTS["technical"], "technical_agent", tools=TECHNICAL_TOOLS)
 
 
 def billing_agent(state) -> dict:
     """账单服务 Agent：账单查询、退款、发票、订阅。"""
-    return _run_agent(state, _PROMPTS["billing"], "billing_agent")
+    return _run_agent(state, _PROMPTS["billing"], "billing_agent", tools=BILLING_TOOLS)
 
 
 def general_agent(state) -> dict:

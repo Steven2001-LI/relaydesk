@@ -38,7 +38,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langgraph.types import Command
 
 from langgraph_cs.graph import build_graph
@@ -51,6 +51,7 @@ _STATIC_DIR = Path(__file__).parent / "static"
 # 哪些节点产出的 token 算"机器人正文"，需要做打字机。
 # 四个专职 Agent + escalation（坐席回复也作为机器人消息显示）。
 _AGENT_NODES = {"technical_agent", "billing_agent", "general_agent", "escalation"}
+_LLM_AGENT_NODES = {"technical_agent", "billing_agent", "general_agent"}
 
 # 兜底的坐席提示（图里 escalation_node 会带 prompt，这里只是 fallback）。
 _DEFAULT_INTERRUPT_PROMPT = "已转人工，请以坐席身份回复用户："
@@ -164,6 +165,50 @@ def _interrupt_payload(chunk) -> dict:
     return {"prompt": _DEFAULT_INTERRUPT_PROMPT, "user_message": ""}
 
 
+def _tool_call_refs(msg) -> list[tuple[str, str]]:
+    """
+    从 AIMessage/AIMessageChunk 里提取工具调用引用，返回 [(去重 key, tool name)]。
+
+    tool_call_chunks 会随流式增量分片到达；同一个调用可能出现多次，所以调用方必须按 key 去重。
+    key 优先用 tool_call id；缺 id 时退到 name+index。
+
+    关键细节（已用 AIMessageChunk 实测确认）：真实流式下只有**第一个**分片带 name/id，
+    后续纯参数续传分片 name 和 id 都是 None——这类分片必须跳过，否则会按
+    "unknown:index" 造出一个假 key，凭空多发一条 name="unknown" 的 tool start 事件。
+    跳过不丢信息：带 name 的首分片（或节点返回消息里解析好的 tool_calls）总会先到。
+    """
+    refs = []
+    for call in getattr(msg, "tool_calls", None) or []:
+        name = call.get("name")
+        if not name:
+            continue
+        key = call.get("id") or f"{name}:{call.get('index', 0)}"
+        refs.append((key, name))
+    for call in getattr(msg, "tool_call_chunks", None) or []:
+        name = call.get("name")
+        if not name:  # 参数续传分片：name/id 均为 None，跳过
+            continue
+        key = call.get("id") or f"{name}:{call.get('index', 0)}"
+        refs.append((key, name))
+    return refs
+
+
+def _tool_messages(delta) -> list[tuple[str, str]]:
+    """从 tools 节点的 state 增量里提取 ToolMessage，返回 [(去重 key, tool name)]。"""
+    messages = []
+    if isinstance(delta, dict):
+        raw = delta.get("messages") or []
+        messages = raw if isinstance(raw, list) else [raw]
+
+    refs = []
+    for msg in messages:
+        if isinstance(msg, ToolMessage):
+            name = getattr(msg, "name", None) or "unknown"
+            key = getattr(msg, "tool_call_id", None) or name
+            refs.append((key, name))
+    return refs
+
+
 def _stream_graph(graph_input, config):
     """
     核心：把一次 graph.stream(...) 的产出翻译成一串 SSE 文本（生成器）。
@@ -177,6 +222,7 @@ def _stream_graph(graph_input, config):
       meta      {intent, confidence}           —— intent 节点后
       rag       {sources: [...]}               —— rag 节点后（没有就空）
       route     {agent}                        —— 路由落点（专职节点名）
+      tool      {name, status}                 —— 工具调用开始/完成（前端本阶段忽略）
       token     {text}                         —— 专职 Agent 增量 token（打字机）
       interrupt {prompt, user_message}         —— 命中转人工，图已暂停；前端切坐席模式
       done      {escalated}                    —— 本轮收尾
@@ -198,18 +244,40 @@ def _stream_graph(graph_input, config):
     #   route 事件（agent=该 node），再发该 token。updates 分支则只在 route 还没发过时才发，
     #   二者择一、只发一次（用 route_sent 标记互斥）。
     route_sent = False
-    # ── messages 流去重用的"本轮第一条 agent 消息 id" ──────────────────────────
-    # 为什么要去重？（已用 python 实测确认，非凭记忆）
-    #   LangGraph 对 agent 节点的 messages 流会发出**两组**消息：
-    #     · 一组 AIMessageChunk，msg.id 形如 "lc_run--..."：LLM 真实流式生成的 token（要保留，做打字机）；
-    #     · 另一组 msg.id 是普通 UUID：节点 `return {"messages":[AIMessage(resp.content)]}` 的那条
-    #       完整消息，被 messages 流**二次重发**（多余，会让答案 ×2）。
-    #   （graph.invoke 拿到的最终消息是单份正确的 —— 证明这是纯流式重发，不是模型/节点产了双份。）
-    # 策略：每轮（每次调用 _stream_graph）只转发**第一条**出现的 agent 消息 id 的 token，
-    #   后续其它 id 的同内容重发一律跳过。注意把 None（无 id）也当作"首个 id"，规则才稳健。
-    # 例外说明：resume（坐席回复）走 escalation 节点，是单条 AIMessage（无 LLM 流式），
-    #   只有一个 id，按"第一条 id"规则会被正常发出，不回退。
-    streamed_msg_id = None
+    # ── 工具事件与 token 去重 ────────────────────────────────────────────────
+    # 工具调用会先产生 content="" 的 tool_call chunks，随后 tools 节点产出 ToolMessage，
+    # 最终 Agent 再生成正文。route 必须排在本轮第一个 agent 信号（tool 或 token）之前。
+    #
+    # token 去重的关键规则：只放行 AIMessageChunk 的正文。节点 return 的完整 AIMessage
+    # 会以另一个新 id 二次重发，若按"新 id 就放行"会让答案 ×2，所以完整 AIMessage 一律不发 token。
+    # escalation 是坐席回复，不走 LLM 流式重发，保留原行为。
+    seen_tool_starts = set()
+    seen_tool_dones = set()
+
+    def ensure_route(node_name):
+        nonlocal route_sent
+        if not route_sent:
+            route_sent = True
+            return _sse("route", agent=node_name)
+        return None
+
+    def tool_start_events(msg):
+        events = []
+        for key, name in _tool_call_refs(msg):
+            if key in seen_tool_starts:
+                continue
+            seen_tool_starts.add(key)
+            events.append(_sse("tool", name=name, status="start"))
+        return events
+
+    def tool_done_events(delta):
+        events = []
+        for key, name in _tool_messages(delta):
+            if key in seen_tool_dones:
+                continue
+            seen_tool_dones.add(key)
+            events.append(_sse("tool", name=name, status="done"))
+        return events
     try:
         for mode, chunk in graph.stream(
             graph_input, config=config, stream_mode=["updates", "messages"]
@@ -234,28 +302,42 @@ def _stream_graph(graph_input, config):
                         # 专职 Agent 节点的 state 更新到达 -> 这就是路由落点。
                         # 但若该节点的第一个 token 已先一步在 messages 分支里发过 route，
                         # 这里就不再重复发（route_sent 互斥，保证只发一次）。
-                        if not route_sent:
-                            route_sent = True
-                            yield _sse("route", agent=node_name)
+                        route_event = ensure_route(node_name)
+                        if route_event:
+                            yield route_event
+                        if isinstance(delta, dict):
+                            for msg in delta.get("messages") or []:
+                                for event in tool_start_events(msg):
+                                    yield event
+                    elif node_name == "tools":
+                        for event in tool_done_events(delta):
+                            yield event
             elif mode == "messages":
                 # chunk: (消息块, metadata)。只转发专职 Agent 节点产生的增量正文。
                 msg, meta = chunk
                 node = (meta or {}).get("langgraph_node")
                 text = getattr(msg, "content", None)
-                if node in _AGENT_NODES and text:
-                    # 关键时机修正：messages 的第一个 agent token 往往先于 updates 那条
-                    # 节点 state 更新到达。若 route 还没发过，**先**补发 route（agent=该 node），
-                    # 再发 token —— 这样前端"路由"步骤不会晚于"应答"步骤点亮。只发一次。
-                    if not route_sent:
-                        route_sent = True
-                        yield _sse("route", agent=node)
-                    # 去重：锁定本轮第一条 agent 消息 id，只放行它的 token；
-                    # 其它 id 是节点返回消息的二次重发（见上方注释），直接丢弃，避免答案 ×2。
-                    mid = getattr(msg, "id", None)
-                    if streamed_msg_id is None:
-                        streamed_msg_id = mid
-                    if mid == streamed_msg_id:
+                if node in _AGENT_NODES:
+                    if _tool_call_refs(msg):
+                        route_event = ensure_route(node)
+                        if route_event:
+                            yield route_event
+                        for event in tool_start_events(msg):
+                            yield event
+
+                    if node == "escalation" and text:
+                        route_event = ensure_route(node)
+                        if route_event:
+                            yield route_event
                         yield _sse("token", text=text)
+                    elif node in _LLM_AGENT_NODES and text and isinstance(msg, AIMessageChunk):
+                        route_event = ensure_route(node)
+                        if route_event:
+                            yield route_event
+                        yield _sse("token", text=text)
+                    elif node in _LLM_AGENT_NODES and text and isinstance(msg, AIMessage):
+                        # 完整 AIMessage 是节点 return 的二次重发，即使 id 没见过也不能放行。
+                        continue
 
         # 没有中断才发 done（中断时前端在等坐席输入，done 留给 resume 之后发）。
         if not interrupted:
