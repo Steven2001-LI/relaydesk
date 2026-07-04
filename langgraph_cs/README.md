@@ -278,15 +278,16 @@ langgraph_cs/.venv/bin/python -m langgraph_cs.eval.answer_eval --self-test
 `eval/tool_eval.py` 评的不是回答文字，而是 Agent 是否**该调工具时调工具、不该调时不乱调**：
 
 ```bash
-# 离线自测：验证集合包含、args 通配、负例判定、重复来源合并，不联网
+# 离线自测：验证集合包含、args 通配、负例判定、重复来源合并、多意图 calls、答案检查，不联网
 langgraph_cs/.venv/bin/python -m langgraph_cs.eval.tool_eval --self-test
 
 # 真实评测：每条单独 thread_id 跑真实 build_graph，顺序执行护 RPM
 langgraph_cs/.venv/bin/python -m langgraph_cs.eval.tool_eval --limit 3
 langgraph_cs/.venv/bin/python -m langgraph_cs.eval.tool_eval --write-md
+langgraph_cs/.venv/bin/python -m langgraph_cs.eval.tool_eval --hard --write-md
 ```
 
-数据集在 `eval/tool_dataset.json`，共 24 条单轮问题：
+基线数据集在 `eval/tool_dataset.json`，共 24 条单轮问题：
 
 | 分组 | 条数 | 设计目的 |
 |---|---:|---|
@@ -296,6 +297,9 @@ langgraph_cs/.venv/bin/python -m langgraph_cs.eval.tool_eval --write-md
 | missing_info 负例 | 4 | 缺 `user_id` / `order_id` / 故障详情，应反问，不该猜参数 |
 | smalltalk 负例 | 2 | 客套闲聊，路由 general，无工具 |
 
+对抗数据集在 `eval/tool_dataset_hard.json`，共 15 条，覆盖缺标识诱导编造、不存在标识符、跨用户越权、
+多意图混合、口语化省略和夹带真实标识的误触发输入。它单独出报告，不混进基线集。
+
 判分看三件事：
 
 | 指标 | 定义 |
@@ -303,23 +307,28 @@ langgraph_cs/.venv/bin/python -m langgraph_cs.eval.tool_eval --write-md
 | should-call 混淆矩阵 | 该调且调了 / 该调没调 / 不该调却调了 / 不该调也没调 |
 | 工具选择准确率 | 正例里 expected tool 是否出现在实际调用集合中（允许先查重再创建） |
 | 参数准确率 | tool_hit 子集上关键参数是否匹配；`reason`/`detail` 写 `"*"` 表示只要非空即可 |
+| 答案检查 | 对抗集中 `found=false` 等场景要求最终回复如实说明查无，不得补出状态 |
 
 真实跑法会从两个来源采集工具调用：最终 state 中所有 `AIMessage.tool_calls`，以及 approval interrupt 的
 `payload.params`（等价于 `create_refund_ticket(params)` 被调用）。技术工单 `create_ticket` 会在评测期间
 monkeypatch 成记录器，避免往演示库写脏数据；读工具保持真实业务库。
 
-真实单次结果（DeepSeek `deepseek-chat`，temperature=0.5，LLM 有非确定性，详见 `eval/tool_results.md`）：
+基线集在 `deepseek-chat`（temperature=0.5，LLM 非确定）下多次复跑为 **22–24/24**（观测 24 / 22 / 22 / 23 / 24）。
+摇摆全落在两条技术类样本：`tech-ticket-01`（模型先调无参 `check_service_status`，是否接着调 `create_ticket` 随采样波动）、
+`missing-id-04`（缺 `user_id` 时或反问、或误触发无参 `check_service_status`）——这与对抗集要抓的“欠信息下过度触发工具”是同一现象。
+基线集样本偏易、已饱和，主要作回归 sanity；`eval/tool_results.md` 是该区间内的单次采样。对抗集真实单次结果详见 `eval/tool_hard_results.md`：
 
 | 指标 | 数字 |
 |---|---:|
-| 总通过率 | **24/24 = 100.0%** |
-| should-call：该调且调了 / 该调没调 | 14 / 0 |
-| should-call：不该调却调了 / 不该调也没调 | 0 / 10 |
+| 总通过率 | **13/15 = 86.7%** |
+| should-call：该调且调了 / 该调没调 | 7 / 0 |
+| should-call：不该调却调了 / 不该调也没调 | 2 / 6 |
 | 正例工具选择准确率 | **100.0%** |
 | tool_hit 子集参数准确率 | **100.0%** |
 
-负例是这套评测的区分度来源：例如「帮我查账单」缺 `user_id` 时，正确行为是追问，而不是猜一个用户去调
-`query_bill`；「退款一般几天到账」是政策问题，应依据知识库回答，而不是调用个人退款状态工具。
+对抗集失败 2 条，暴露 3 类缺口：工具层无鉴权/归属校验（`hard-cross-user-02` 越权查账单）、
+显式“别查系统”仍被真实订单号诱导误触发（`hard-adversarial-negative-03`）、条件多意图第二步未自动编排
+（`hard-multi-intent-02` 查第一单后停下确认）。这些是评测发现的真实缺口，修复属后续步骤，本步不改系统。
 
 ### 4. LangSmith：节点级 trace + 数据集 + evaluate（需 key，上 LangChain 云）
 

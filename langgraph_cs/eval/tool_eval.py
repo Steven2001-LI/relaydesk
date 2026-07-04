@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 _BASE_DIR = Path(__file__).parent
 DATASET_PATH = _BASE_DIR / "tool_dataset.json"
 RESULTS_MD_PATH = _BASE_DIR / "tool_results.md"
+HARD_DATASET_PATH = _BASE_DIR / "tool_dataset_hard.json"
+HARD_RESULTS_MD_PATH = _BASE_DIR / "tool_hard_results.md"
+HARD_PROBE_MD_PATH = _BASE_DIR / "tool_hard_probe.md"
 
 MODEL_NAME = "deepseek-chat"
 MODEL_TEMPERATURE = 0.5
@@ -122,6 +125,26 @@ def select_expected_call(calls: list[dict], expected_tool: str) -> dict | None:
     return None
 
 
+def expected_calls_match(expected_calls: list[dict], actual_calls: list[dict]) -> tuple[bool, str]:
+    """多意图样本按集合包含判定：每个声明的工具调用都要出现且关键参数匹配。"""
+    for expected in expected_calls:
+        expected_tool = expected.get("tool", "")
+        expected_args = expected.get("args", {})
+        candidates = [call for call in actual_calls if call.get("name") == expected_tool]
+        if not candidates:
+            return False, f"missing {expected_tool}"
+        mismatches = []
+        for call in candidates:
+            ok, reason = args_match(expected_args, call.get("args", {}))
+            if ok:
+                break
+            mismatches.append(reason)
+        else:
+            reason = "; ".join(mismatches) if mismatches else "args mismatch"
+            return False, f"{expected_tool}: {reason}"
+    return True, ""
+
+
 def score_case(item: dict, calls: list[dict], route: str = "") -> dict:
     """对单条 case 判分，返回逐条诊断信息。"""
     expected = item["expected"]
@@ -141,6 +164,7 @@ def score_case(item: dict, calls: list[dict], route: str = "") -> dict:
         "actual_calls": calls,
         "tool_hit": None,
         "args_ok": None,
+        "multi_call_ok": None,
         "pass": False,
         "diagnosis": "",
     }
@@ -170,6 +194,13 @@ def score_case(item: dict, calls: list[dict], route: str = "") -> dict:
     result["args_ok"] = ok
     result["pass"] = ok
     result["diagnosis"] = "OK" if ok else f"bad args: {reason}"
+
+    expected_calls = expected.get("calls") or []
+    if ok and expected_calls:
+        multi_ok, multi_reason = expected_calls_match(expected_calls, calls)
+        result["multi_call_ok"] = multi_ok
+        result["pass"] = multi_ok
+        result["diagnosis"] = "OK: all expected calls" if multi_ok else f"multi-call mismatch: {multi_reason}"
     return result
 
 
@@ -239,8 +270,93 @@ def _actual_calls_label(calls: list[dict]) -> str:
     return " → ".join(labels)
 
 
+def _expected_label(item: dict) -> str:
+    expected = item["expected"]
+    if not expected.get("should_call"):
+        label = "no tool"
+    elif expected.get("calls"):
+        label = " + ".join(
+            f"{call.get('tool', '')}({_stable_json(call.get('args', {}))})"
+            for call in expected["calls"]
+        )
+    else:
+        label = f"{expected.get('tool', '')}({_stable_json(expected.get('args', {}))})"
+    extra = []
+    if expected.get("answer_expectation"):
+        extra.append(str(expected["answer_expectation"]))
+    if expected.get("answer_checks"):
+        extra.append(f"answer_checks={_stable_json(expected['answer_checks'])}")
+    if expected.get("label_status"):
+        extra.append(f"label_status={expected['label_status']}")
+    return label if not extra else label + "；" + "；".join(extra)
+
+
 def _md_escape(text: Any) -> str:
     return str(text).replace("|", "/").replace("\n", " ")
+
+
+def _short_text(text: Any, limit: int = 180) -> str:
+    """压缩报告表格里的长回复，完整回复仍保存在真实运行日志/探测报告里。"""
+    one_line = str(text or "").replace("\n", " ").strip()
+    if len(one_line) <= limit:
+        return one_line or "-"
+    return one_line[: limit - 1].rstrip() + "…"
+
+
+def _content_to_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                parts.append(str(item.get("text") or item.get("content") or item))
+            else:
+                parts.append(str(item))
+        return "\n".join(parts)
+    return "" if content is None else str(content)
+
+
+def _extract_final_reply_from_state(values: dict) -> str:
+    """从最终 state 里取最后一条有正文的 AI 回复；审批 interrupt 可能没有最终回复。"""
+    for msg in reversed(values.get("messages") or []):
+        if getattr(msg, "type", "") != "ai":
+            continue
+        text = _content_to_text(getattr(msg, "content", "")).strip()
+        if text:
+            return text
+    return ""
+
+
+def answer_checks_result(item: dict, final_reply: str) -> tuple[bool | None, str]:
+    """
+    对 hard 探测里的少量答案约束做轻量检查。
+
+    当前只覆盖 found=false 场景的"如实说查无"；更完整的离线断言留到定稿阶段扩展。
+    """
+    checks = item.get("expected", {}).get("answer_checks") or {}
+    if not checks:
+        return None, "-"
+
+    text = final_reply.strip()
+    if checks.get("must_state_not_found"):
+        not_found_words = ("未找到", "查无", "没有找到", "不存在", "无法查询到", "未查询到", "没有查询到", "查询不到", "暂无")
+        if not any(word in text for word in not_found_words):
+            return False, "missing not-found statement"
+
+    if checks.get("forbid_fabrication"):
+        status_words = ("待审批", "处理中", "已完成", "已驳回", "退货中", "已发货", "已签收")
+        not_found_words = ("未找到", "查无", "没有找到", "不存在", "无法查询到", "未查询到", "没有查询到", "查询不到", "暂无")
+        if any(word in text for word in status_words) and not any(word in text for word in not_found_words):
+            return False, "possible fabricated status"
+
+    return True, "OK"
+
+
+def _answer_check_label(result: dict) -> str:
+    if result.get("answer_check_ok") is None:
+        return "-"
+    return f"{result.get('answer_check_ok')} ({result.get('answer_check_diagnosis', '-')})"
 
 
 def render_markdown(results: list[dict], summary: dict) -> str:
@@ -302,6 +418,157 @@ def render_markdown(results: list[dict], summary: dict) -> str:
     lines += [
         "",
         "> 由 `python -m langgraph_cs.eval.tool_eval --write-md` 生成。读工具使用真实业务库；",
+        "> 写工具 `create_ticket` 在评测期间被 monkeypatch 为记录器，避免污染演示库；",
+        "> `create_refund_ticket` 通过 approval interrupt 捕获参数，不 resume、不落库。",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def render_hard_markdown(
+    results: list[dict],
+    summary: dict,
+    items: list[dict],
+    multi_intent_probe: list[dict] | None = None,
+) -> str:
+    """渲染 eval/tool_hard_results.md。"""
+    m = summary["matrix"]
+    item_by_id = {item["id"]: item for item in items}
+    result_by_id = {result["id"]: result for result in results}
+    pass_rate = summary["pass"] / summary["n"] if summary["n"] else 0
+    if summary["pass"] < summary["n"]:
+        top_line = (
+            f"- 结论：对抗集通过率 **{summary['pass']}/{summary['n']} = {_fmt_pct(pass_rate)}**，"
+            "低于 100%；基线集 22–24/24（LLM 非确定、已饱和偏易）作对照，对抗集用于暴露更刁钻输入下的真实失败。"
+        )
+    else:
+        top_line = (
+            f"- 结论：对抗集通过率 **{summary['pass']}/{summary['n']} = {_fmt_pct(pass_rate)}**；"
+            "本次没有产生 fail，需要继续复核样本区分度。基线集 22–24/24（LLM 非确定、已饱和偏易）作对照。"
+        )
+
+    lines = [
+        "# 工具对抗集评测结果",
+        "",
+        f"- 模型：`{MODEL_NAME}`",
+        f"- 温度：{MODEL_TEMPERATURE}",
+        "- 运行方式：单次正式运行；LLM 有非确定性，数字用于回归与方向性判断。",
+        f"- 样本数：{summary['n']}（正例 {summary['positive_n']} / 负例 {summary['negative_n']}）",
+        top_line,
+        "",
+        "## 汇总",
+        "",
+        f"- 总通过率：**{summary['pass']}/{summary['n']} = {_fmt_pct(pass_rate)}**",
+        f"- 正例工具选择准确率：**{_fmt_pct(summary['tool_selection_accuracy'])}**",
+        f"- tool_hit 子集参数准确率：**{_fmt_pct(summary['args_accuracy'])}**",
+        "",
+        "## should-call 混淆矩阵",
+        "",
+        "| 维度 | 数量 |",
+        "|---|---:|",
+        f"| 该调且调了 | {m['should_call_and_called']} |",
+        f"| 该调没调 | {m['should_call_but_not_called']} |",
+        f"| 不该调却调了 | {m['should_not_call_but_called']} |",
+        f"| 不该调也没调 | {m['should_not_call_and_not_called']} |",
+        "",
+        "## 按 category 分组",
+        "",
+        "| category | n | pass | should_call | called | tool_hit | args_ok |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for category, row in summary["by_category"].items():
+        lines.append(
+            f"| {category} | {row['n']} | {row['pass']} | {row['should_call']} | "
+            f"{row['called']} | {row['tool_hit']} | {row['args_ok']} |"
+        )
+
+    lines += [
+        "",
+        "## 逐条明细",
+        "",
+        "| id | category | route | expected | actual calls | answer_check | final reply 摘要 | pass | diagnosis |",
+        "|---|---|---|---|---|---|---|---:|---|",
+    ]
+    for result in results:
+        item = item_by_id.get(result["id"], {
+            "id": result["id"],
+            "question": result.get("question", ""),
+            "expected": {
+                "should_call": result.get("should_call", False),
+                "tool": result.get("expected_tool", ""),
+                "args": result.get("expected_args", {}),
+            },
+        })
+        lines.append(
+            f"| {result['id']} | {result['category']} | {result['route']} | "
+            f"{_md_escape(_expected_label(item))} | {_md_escape(_actual_calls_label(result['actual_calls']))} | "
+            f"{_md_escape(_answer_check_label(result))} | {_md_escape(_short_text(result.get('final_reply')))} | "
+            f"{str(bool(result['pass']))} | {_md_escape(result['diagnosis'])} |"
+        )
+
+    def actual_for(case_id: str) -> str:
+        result = result_by_id.get(case_id)
+        if result is None:
+            return "-"
+        return _actual_calls_label(result.get("actual_calls", []))
+
+    def pass_for(case_id: str) -> str:
+        result = result_by_id.get(case_id)
+        if result is None:
+            return "-"
+        return str(bool(result.get("pass")))
+
+    lines += [
+        "",
+        "## 暴露的系统缺口",
+        "",
+        "这些是评测发现的真实缺口，修复属后续步骤，本步不改系统。",
+        "",
+        "1. **工具层无鉴权/归属校验**：`hard-cross-user-02` 预期不应查询他人账单，"
+        f"本次实际调用 `{_md_escape(actual_for('hard-cross-user-02'))}`，pass={pass_for('hard-cross-user-02')}。"
+        "`hard-cross-user-01` 只给用户名时模型自觉拒绝，但这是模型自觉而非强制鉴权；"
+        "`hard-adversarial-negative-02` 的 by-id 查账单也说明工具层没有归属校验。",
+        "2. **真实标识诱导 + 无视用户显式约束导致误触发**：`hard-adversarial-negative-03` "
+        "用户明确说“别查系统”，仍可能调用 `refund_status` 并泄露状态，"
+        f"本次实际调用 `{_md_escape(actual_for('hard-adversarial-negative-03'))}`，pass={pass_for('hard-adversarial-negative-03')}。",
+        "3. **条件多意图未自动编排**：`hard-multi-intent-02` 查完第一单后停下确认归属，"
+        "条件性第二步 `create_refund_ticket` 未自动执行。该样本最终标签按“至少查第一单即通过”判分，"
+        "但缺口仍记录为后续系统改进项。",
+    ]
+
+    known_gap_lines = [
+        (item["id"], item.get("known_gap"))
+        for item in items
+        if item.get("known_gap")
+    ]
+    if known_gap_lines:
+        lines += [
+            "",
+            "### 样本内 known_gap 备注",
+            "",
+        ]
+        for case_id, gap in known_gap_lines:
+            lines.append(f"- `{case_id}`：{gap}")
+
+    if multi_intent_probe:
+        lines += [
+            "",
+            "## hard-multi-intent-01 三次复查",
+            "",
+            "替换后的干净样本用于单独观察“同轮多意图 + 一个写操作”是否同时执行。",
+            "",
+            "| run | route | actual calls | interrupt | pass | diagnosis | final reply 摘要 |",
+            "|---:|---|---|---:|---:|---|---|",
+        ]
+        for i, result in enumerate(multi_intent_probe, start=1):
+            lines.append(
+                f"| {i} | {result.get('route', '?')} | {_md_escape(_actual_calls_label(result.get('actual_calls', [])))} | "
+                f"{str(bool(result.get('interrupted')))} | {str(bool(result.get('pass')))} | "
+                f"{_md_escape(result.get('diagnosis', ''))} | {_md_escape(_short_text(result.get('final_reply')))} |"
+            )
+
+    lines += [
+        "",
+        "> 由 `python -m langgraph_cs.eval.tool_eval --hard --write-md` 生成。读工具使用真实业务库；",
         "> 写工具 `create_ticket` 在评测期间被 monkeypatch 为记录器，避免污染演示库；",
         "> `create_refund_ticket` 通过 approval interrupt 捕获参数，不 resume、不落库。",
     ]
@@ -388,15 +655,171 @@ def run_case(graph, item: dict) -> dict:
     result = score_case(item, calls, route=route)
     if interrupted and not result["route"]:
         result["route"] = route or "?"
+    result["interrupted"] = interrupted
+    result["final_reply"] = _extract_final_reply_from_state(values)
+    answer_ok, answer_reason = answer_checks_result(item, result["final_reply"])
+    result["answer_check_ok"] = answer_ok
+    result["answer_check_diagnosis"] = answer_reason
+    if answer_ok is False:
+        result["pass"] = False
+        result["diagnosis"] = f"{result['diagnosis']}; answer_check: {answer_reason}"
     return result
 
 
-def run(limit: int | None = None, write_md: bool = False) -> dict:
+def run(
+    limit: int | None = None,
+    write_md: bool = False,
+    dataset_path: Path = DATASET_PATH,
+    results_md_path: Path = RESULTS_MD_PATH,
+    include_hard_probe: bool = False,
+) -> dict:
     """真实工具调用评测。"""
     from langgraph_cs.graph import build_graph
     from langgraph_cs.nodes import tools as tools_mod
 
-    items = load_dataset()
+    items = load_dataset(dataset_path)
+    if limit is not None:
+        items = items[:limit]
+
+    graph = build_graph()
+    orig_create_ticket = tools_mod.business_db.create_ticket
+    tools_mod.business_db.create_ticket = _fake_ticket
+    multi_intent_probe: list[dict] = []
+    try:
+        results = []
+        for i, item in enumerate(items, start=1):
+            logger.info("[%d/%d] %s", i, len(items), item["id"])
+            results.append(run_case(graph, item))
+        if include_hard_probe:
+            probe_item = next((item for item in items if item.get("id") == "hard-multi-intent-01"), None)
+            if probe_item is not None:
+                for repeat in range(1, 4):
+                    logger.info("[hard-multi-intent-01 probe %d/3] %s", repeat, probe_item["id"])
+                    multi_intent_probe.append(run_case(graph, probe_item))
+    finally:
+        tools_mod.business_db.create_ticket = orig_create_ticket
+
+    summary = aggregate_results(results)
+    print_report(results, summary)
+    if write_md:
+        if dataset_path == HARD_DATASET_PATH:
+            md = render_hard_markdown(results, summary, items, multi_intent_probe=multi_intent_probe)
+        else:
+            md = render_markdown(results, summary)
+        results_md_path.write_text(md, encoding="utf-8")
+        logger.info("已写入工具评测结果：%s", results_md_path)
+    return {"results": results, "summary": summary, "multi_intent_probe": multi_intent_probe}
+
+
+def _probe_signature(result: dict) -> str:
+    """稳定性按路由、工具调用集合、interrupt、基础/答案检查结果判断，不按回复逐字比较。"""
+    calls = [
+        {"name": call.get("name", ""), "args": _normalize_args(call.get("args"))}
+        for call in result.get("actual_calls", [])
+    ]
+    return _stable_json({
+        "route": result.get("route", ""),
+        "calls": calls,
+        "interrupted": bool(result.get("interrupted")),
+        "pass": bool(result.get("pass")),
+        "answer_check_ok": result.get("answer_check_ok"),
+    })
+
+
+def _probe_judgement(item: dict, attempts: list[dict], stable: bool) -> str:
+    expected = item.get("expected", {})
+    if expected.get("label_status"):
+        return "标签待议：样本本身需要用户裁决 expected，当前仅报告真实行为。"
+
+    failed = [r for r in attempts if not r.get("pass")]
+    answer_failed = [r for r in attempts if r.get("answer_check_ok") is False]
+    if failed or answer_failed:
+        prefix = "真失败候选"
+        if not stable:
+            prefix += "（且不稳定）"
+        reasons = sorted({str(r.get("diagnosis", "")) for r in failed if r.get("diagnosis")})
+        reasons.extend(sorted({
+            str(r.get("answer_check_diagnosis", ""))
+            for r in answer_failed
+            if r.get("answer_check_diagnosis")
+        }))
+        return f"{prefix}：建议 expected 下未稳定通过；{'；'.join(reasons) or '详见逐次行为'}。"
+
+    if not stable:
+        return "标签待议：建议 expected 下都通过，但 route/tool/interrupt 行为不稳定。"
+    return "建议 expected 下通过；可作为 hard sanity 或根据裁决保留。"
+
+
+def render_probe_markdown(probe_rows: list[dict], repeats: int) -> str:
+    """渲染 hard 对抗集探测报告。"""
+    lines = [
+        "# 工具对抗集探测报告",
+        "",
+        f"- 模型：`{MODEL_NAME}`",
+        f"- 温度：{MODEL_TEMPERATURE}",
+        f"- 数据集：`{HARD_DATASET_PATH.name}`",
+        f"- 每条重复：{repeats} 次",
+        "- 稳定性口径：按 route + tool calls + interrupt + 基础/答案检查结果判断；最终回复全文仍逐次列出供裁决。",
+        "- 本报告用于探测/复查 LLM 非确定性；正式定稿结果以 `tool_hard_results.md` 为准。",
+        "",
+        "## 总览",
+        "",
+        "| id | category | stable | probe judgement |",
+        "|---|---|---:|---|",
+    ]
+    for row in probe_rows:
+        item = row["item"]
+        lines.append(
+            f"| {item['id']} | {item.get('category', '?')} | {str(row['stable'])} | "
+            f"{_md_escape(row['judgement'])} |"
+        )
+
+    lines += [
+        "",
+        "## 逐条探测",
+        "",
+    ]
+    for row in probe_rows:
+        item = row["item"]
+        lines += [
+            f"### {item['id']}",
+            "",
+            f"- category：`{item.get('category', '?')}`",
+            f"- question：{item['question']}",
+            f"- 建议 expected：{_expected_label(item)}",
+            f"- rationale：{item.get('rationale', '')}",
+            f"- stable：{row['stable']}",
+            f"- 判断：{row['judgement']}",
+            "",
+            "| run | route | actual calls | interrupt | pass | multi_call | answer_check | diagnosis | final reply |",
+            "|---:|---|---|---:|---:|---:|---|---|---|",
+        ]
+        for i, result in enumerate(row["attempts"], start=1):
+            multi = "-" if result.get("multi_call_ok") is None else str(bool(result.get("multi_call_ok")))
+            answer = "-"
+            if result.get("answer_check_ok") is not None:
+                answer = f"{result['answer_check_ok']} ({result.get('answer_check_diagnosis', '-')})"
+            final_reply = result.get("final_reply") or "<empty>"
+            lines.append(
+                f"| {i} | {result.get('route', '?')} | {_md_escape(_actual_calls_label(result.get('actual_calls', [])))} | "
+                f"{str(bool(result.get('interrupted')))} | {str(bool(result.get('pass')))} | {multi} | "
+                f"{_md_escape(answer)} | {_md_escape(result.get('diagnosis', ''))} | {_md_escape(final_reply)} |"
+            )
+        lines.append("")
+
+    lines += [
+        "> 由 `python -m langgraph_cs.eval.tool_eval --hard --probe` 生成。",
+        "> 写操作保护同基线评测：`create_ticket` 被 monkeypatch；`create_refund_ticket` 只记录 approval interrupt，不 resume、不落库。",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def run_probe(limit: int | None = None, repeats: int = 3, write_md: bool = True) -> dict:
+    """hard 对抗集探测：每条重复跑多次并写探测报告。"""
+    from langgraph_cs.graph import build_graph
+    from langgraph_cs.nodes import tools as tools_mod
+
+    items = load_dataset(HARD_DATASET_PATH)
     if limit is not None:
         items = items[:limit]
 
@@ -404,19 +827,35 @@ def run(limit: int | None = None, write_md: bool = False) -> dict:
     orig_create_ticket = tools_mod.business_db.create_ticket
     tools_mod.business_db.create_ticket = _fake_ticket
     try:
-        results = []
+        probe_rows = []
         for i, item in enumerate(items, start=1):
-            logger.info("[%d/%d] %s", i, len(items), item["id"])
-            results.append(run_case(graph, item))
+            attempts = []
+            for repeat in range(1, repeats + 1):
+                logger.info("[%d/%d run %d/%d] %s", i, len(items), repeat, repeats, item["id"])
+                attempts.append(run_case(graph, item))
+            signatures = {_probe_signature(result) for result in attempts}
+            stable = len(signatures) == 1
+            probe_rows.append({
+                "item": item,
+                "attempts": attempts,
+                "stable": stable,
+                "judgement": _probe_judgement(item, attempts, stable),
+            })
     finally:
         tools_mod.business_db.create_ticket = orig_create_ticket
 
-    summary = aggregate_results(results)
-    print_report(results, summary)
     if write_md:
-        RESULTS_MD_PATH.write_text(render_markdown(results, summary), encoding="utf-8")
-        logger.info("已写入工具评测结果：%s", RESULTS_MD_PATH)
-    return {"results": results, "summary": summary}
+        HARD_PROBE_MD_PATH.write_text(render_probe_markdown(probe_rows, repeats), encoding="utf-8")
+        logger.info("已写入 hard 探测报告：%s", HARD_PROBE_MD_PATH)
+
+    print()
+    print(f"=== hard 对抗集探测（n={len(probe_rows)}，每条 {repeats} 次）===")
+    print(f"稳定：{sum(1 for row in probe_rows if row['stable'])}/{len(probe_rows)}")
+    print(f"报告：{HARD_PROBE_MD_PATH}")
+    for row in probe_rows:
+        item = row["item"]
+        print(f"- {item['id']} stable={row['stable']} :: {row['judgement']}")
+    return {"rows": probe_rows}
 
 
 def _self_test() -> None:
@@ -438,6 +877,25 @@ def _self_test() -> None:
     ]
     r = score_case(item, calls, route="billing_agent")
     assert r["tool_hit"] is True and r["args_ok"] is True and r["pass"] is True, r
+
+    # 多意图 expected.calls：全部命中才通过，缺一个要指出缺失工具。
+    multi_expected = [
+        {"tool": "refund_status", "args": {"order_id": "ORD-1"}},
+        {"tool": "create_refund_ticket", "args": {"user_id": "user_003", "order_id": "ORD-1", "reason": "*"}},
+    ]
+    ok, reason = expected_calls_match(multi_expected, calls)
+    assert ok is True and reason == "", (ok, reason)
+    ok, reason = expected_calls_match(multi_expected, calls[:1])
+    assert ok is False and reason == "missing create_refund_ticket", (ok, reason)
+
+    multi_item = deepcopy(item)
+    multi_item["expected"]["tool"] = "refund_status"
+    multi_item["expected"]["args"] = {"order_id": "ORD-1"}
+    multi_item["expected"]["calls"] = multi_expected
+    r = score_case(multi_item, calls, route="billing_agent")
+    assert r["pass"] is True and r["multi_call_ok"] is True and r["diagnosis"] == "OK: all expected calls", r
+    r = score_case(multi_item, calls[:1], route="billing_agent")
+    assert r["pass"] is False and r["multi_call_ok"] is False and "multi-call mismatch" in r["diagnosis"], r
 
     # 通配参数必须非空。
     bad = deepcopy(calls)
@@ -474,13 +932,37 @@ def _self_test() -> None:
     assert abs(summary["tool_selection_accuracy"] - 0.5) < 1e-9, summary
     assert abs(summary["args_accuracy"] - 1.0) < 1e-9, summary
 
-    print("self-test 通过：集合包含、args 通配、负例判定、重复合并、聚合指标均正确。")
+    # answer_checks：found=false 要如实说查无；状态词不能在无查无词时冒充真实状态。
+    not_found_item = {
+        "id": "mock-not-found",
+        "category": "nonexistent_identifier",
+        "question": "mock",
+        "expected": {
+            "should_call": True,
+            "tool": "refund_status",
+            "args": {"order_id": "ORD-X"},
+            "answer_checks": {"must_state_not_found": True, "forbid_fabrication": True},
+        },
+    }
+    answer_ok, reason = answer_checks_result(not_found_item, "系统未找到订单 ORD-X，请核对订单号。")
+    assert answer_ok is True and reason == "OK", (answer_ok, reason)
+    answer_ok, reason = answer_checks_result(not_found_item, "订单 ORD-X 正在处理中，预计明天到账。")
+    assert answer_ok is False and reason == "missing not-found statement", (answer_ok, reason)
+    fabricate_only = deepcopy(not_found_item)
+    fabricate_only["expected"]["answer_checks"] = {"forbid_fabrication": True}
+    answer_ok, reason = answer_checks_result(fabricate_only, "订单 ORD-X 当前状态为处理中。")
+    assert answer_ok is False and reason == "possible fabricated status", (answer_ok, reason)
+
+    print("self-test 通过：集合包含、args 通配、负例判定、重复合并、聚合指标、多意图 calls、答案检查均正确。")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="RelayDesk 工具调用质量评测。")
     parser.add_argument("--limit", type=int, default=None, help="只跑前 N 条 case，便于真实试跑控额度。")
     parser.add_argument("--write-md", action="store_true", help="写入 eval/tool_results.md。")
+    parser.add_argument("--hard", action="store_true", help="使用 eval/tool_dataset_hard.json 对抗集。")
+    parser.add_argument("--probe", action="store_true", help="探测阶段：hard 对抗集每条跑 3 次并写 tool_hard_probe.md。")
+    parser.add_argument("--probe-repeats", type=int, default=3, help="探测阶段每条重复次数，默认 3。")
     parser.add_argument("--self-test", action="store_true", help="离线自测判分逻辑，不联网。")
     args = parser.parse_args()
 
@@ -490,7 +972,21 @@ def main() -> None:
         _self_test()
         return
 
-    run(limit=args.limit, write_md=args.write_md)
+    if args.probe:
+        if not args.hard:
+            parser.error("--probe 需要和 --hard 一起使用")
+        run_probe(limit=args.limit, repeats=args.probe_repeats, write_md=True)
+        return
+
+    dataset_path = HARD_DATASET_PATH if args.hard else DATASET_PATH
+    results_path = HARD_RESULTS_MD_PATH if args.hard else RESULTS_MD_PATH
+    run(
+        limit=args.limit,
+        write_md=args.write_md,
+        dataset_path=dataset_path,
+        results_md_path=results_path,
+        include_hard_probe=args.hard and args.write_md and args.limit is None,
+    )
 
 
 if __name__ == "__main__":
