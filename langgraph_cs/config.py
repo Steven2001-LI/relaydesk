@@ -29,6 +29,20 @@ LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
 LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "relaydesk-langgraph")
 
 
+def build_session_config(thread_id: str, session_user_id: str = "") -> dict:
+    """
+    构造 LangGraph runnable config。
+
+    session_user_id 是客户端声明的 demo 身份；空身份必须省略该键，保留未登录 demo 模式。
+    生产环境应由服务端从已认证会话派生身份，而不是信任客户端输入。
+    """
+    configurable = {"thread_id": thread_id}
+    session_user_id = (session_user_id or "").strip()
+    if session_user_id:
+        configurable["session_user_id"] = session_user_id
+    return {"configurable": configurable}
+
+
 def require_api_key() -> str:
     """返回 DeepSeek API key；缺失时抛出清晰配置错误。"""
     api_key = os.getenv("DEEPSEEK_API_KEY")

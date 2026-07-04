@@ -35,11 +35,27 @@ const block = src.slice(afterStart, beforeEnd);
 // 在隔离沙箱里求值，导出纯函数。
 const sandbox = {};
 vm.createContext(sandbox);
-vm.runInContext(block + "\nthis.renderMarkdown = renderMarkdown; this.toolLabel = toolLabel;", sandbox);
+vm.runInContext(
+  block + [
+    "",
+    "this.renderMarkdown = renderMarkdown;",
+    "this.toolLabel = toolLabel;",
+    "this.buildChatBody = buildChatBody;",
+    "this.buildSeatResumeBody = buildSeatResumeBody;",
+    "this.buildApprovalResumeBody = buildApprovalResumeBody;",
+  ].join("\n"),
+  sandbox
+);
 const renderMarkdown = sandbox.renderMarkdown;
 const toolLabel = sandbox.toolLabel;
+const buildChatBody = sandbox.buildChatBody;
+const buildSeatResumeBody = sandbox.buildSeatResumeBody;
+const buildApprovalResumeBody = sandbox.buildApprovalResumeBody;
 assert.equal(typeof renderMarkdown, "function", "renderMarkdown 未成功导出");
 assert.equal(typeof toolLabel, "function", "toolLabel 未成功导出");
+assert.equal(typeof buildChatBody, "function", "buildChatBody 未成功导出");
+assert.equal(typeof buildSeatResumeBody, "function", "buildSeatResumeBody 未成功导出");
+assert.equal(typeof buildApprovalResumeBody, "function", "buildApprovalResumeBody 未成功导出");
 
 // ── 断言小工具 ──
 let passed = 0;
@@ -50,6 +66,7 @@ function test(name, fn) {
 }
 // 统计子串出现次数
 const count = (hay, needle) => hay.split(needle).length - 1;
+const plain = (value) => JSON.parse(JSON.stringify(value));
 
 // ════════════════════════════════════════════════════════
 // 用例
@@ -62,6 +79,22 @@ test("工具名中文映射：已知工具转中文，未知工具回退原文",
   assert.equal(toolLabel("create_ticket"), "创建报障工单");
   assert.equal(toolLabel("check_service_status"), "查询服务状态");
   assert.equal(toolLabel("unknown_tool"), "unknown_tool");
+});
+
+test("前端请求 body：chat/resume 都包含 session_user_id", () => {
+  assert.deepEqual(
+    plain(buildChatBody("查账单", "t-1", " user_001 ")),
+    { message: "查账单", thread_id: "t-1", session_user_id: "user_001" }
+  );
+  assert.deepEqual(
+    plain(buildSeatResumeBody("t-2", "user_001", "坐席回复")),
+    { thread_id: "t-2", session_user_id: "user_001", seat_reply: "坐席回复" }
+  );
+  assert.deepEqual(
+    plain(buildApprovalResumeBody("t-3", "user_001", true, "已核实")),
+    { thread_id: "t-3", session_user_id: "user_001", approval: { approved: true, note: "已核实" } }
+  );
+  assert.equal(buildChatBody("游客", "t-4", "").session_user_id, "");
 });
 
 test("项间夹空行的有序列表 -> 单个 <ol> 顺序编号（P0-2 关键）", () => {

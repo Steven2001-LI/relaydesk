@@ -41,6 +41,7 @@ from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langgraph.types import Command
 
+from langgraph_cs.config import build_session_config
 from langgraph_cs.graph import build_graph
 
 logger = logging.getLogger(__name__)
@@ -393,18 +394,20 @@ def build_app() -> FastAPI:
     @app.post("/api/chat")
     async def chat(request: Request):
         """
-        入参 JSON：{message: str, thread_id: str}
+        入参 JSON：{message: str, thread_id: str, session_user_id?: str}
         以 SSE 流式返回本轮图执行的全部事件（见 _stream_graph 协议）。
         """
         body = await request.json()
         message = (body.get("message") or "").strip()
         thread_id = (body.get("thread_id") or "").strip()
+        session_user_id = (body.get("session_user_id") or "").strip()
         if not message or not thread_id:
             # 参数缺失也走 SSE error，让前端用同一套通道处理。
             return _sse_response(
                 iter([_sse("error", message="缺少 message 或 thread_id。")])
             )
-        config = {"configurable": {"thread_id": thread_id}}
+        # demo 身份由客户端声明，非认证；生产必须由服务端从已认证会话派生，不可信客户端输入。
+        config = build_session_config(thread_id, session_user_id)
         graph_input = {"messages": [HumanMessage(content=message)]}
         return _sse_response(_stream_graph(graph_input, config))
 
@@ -412,8 +415,8 @@ def build_app() -> FastAPI:
     async def resume(request: Request):
         """
         中断后恢复图。
-          - 转人工：{thread_id: str, seat_reply: str}
-          - 审批：  {thread_id: str, approval: {approved: bool, note: str}}
+          - 转人工：{thread_id: str, session_user_id?: str, seat_reply: str}
+          - 审批：  {thread_id: str, session_user_id?: str, approval: {approved: bool, note: str}}
         用 Command(resume=...) 续跑，SSE 把后续 token/tool/done 吐回。
 
         信任边界（demo 限定，评审已记录）：本端点与 /api/chat 共用无鉴权的
@@ -422,6 +425,7 @@ def build_app() -> FastAPI:
         """
         body = await request.json()
         thread_id = (body.get("thread_id") or "").strip()
+        session_user_id = (body.get("session_user_id") or "").strip()
         seat_reply = body.get("seat_reply")
         approval = body.get("approval")
         if not thread_id:
@@ -459,7 +463,8 @@ def build_app() -> FastAPI:
             return _sse_response(
                 iter([_sse("error", message="缺少 seat_reply 或 approval。")])
             )
-        config = {"configurable": {"thread_id": thread_id}}
+        # demo 身份由客户端声明，非认证；生产必须由服务端从已认证会话派生，不可信客户端输入。
+        config = build_session_config(thread_id, session_user_id)
         return _sse_response(_stream_graph(Command(resume=resume_value), config))
 
     # 静态资源（app.js / style.css 等）挂在 /static 下。

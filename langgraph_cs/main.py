@@ -24,11 +24,12 @@ invoke 的返回结果里会带 "__interrupt__"。这里检测到后，提示并
 import json
 import logging
 import os
+import argparse
 
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
-from langgraph_cs.config import require_api_key
+from langgraph_cs.config import build_session_config, require_api_key
 from langgraph_cs.graph import build_graph
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -115,17 +116,37 @@ def _print_reply(result) -> None:
     print(f"RelayDesk{tag}: {reply}\n")
 
 
+def _read_session_user_id(cli_user: str | None) -> str:
+    """确定 CLI demo 身份；空值表示未登录 demo 模式。"""
+    if cli_user is not None:
+        return cli_user.strip()
+    try:
+        return input("以哪个用户身份登录？（如 user_001，直接回车 = demo 未登录）: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\n>>> 未选择身份，进入 demo 未登录模式。")
+        return ""
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="RelayDesk LangGraph 命令行客服演示。")
+    parser.add_argument("--user", default=None, help="demo 会话身份，如 user_001；空表示未登录 demo 模式。")
+    args = parser.parse_args()
+
     require_api_key()
 
     # build_graph() 内部按 CS_CHECKPOINT 选 saver（memory|sqlite），这里只读出来给用户提示。
     graph = build_graph()
     backend = os.getenv("CS_CHECKPOINT", "memory").strip().lower()
+    session_user_id = _read_session_user_id(args.user)
 
     # thread_id 标识一次会话。同一个 id = 同一段记忆，也是 interrupt/resume 定位中断点的依据。
-    config = {"configurable": {"thread_id": "demo-session-1"}}
+    config = build_session_config("demo-session-1", session_user_id)
 
     print(f"RelayDesk (LangGraph 骨架) ʕ•ᴥ•ʔ  [持久化后端: {backend}]  输入 quit/退出 结束")
+    if session_user_id:
+        print(f"Demo 身份：{session_user_id}（客户端声明，非认证）")
+    else:
+        print("Demo 身份：游客（未注入 session_user_id，工具保持 demo 开放模式）")
     print("提示：说\"转人工\"可体验 human-in-the-loop（图暂停 -> 你以坐席身份输入 -> 恢复）\n")
     while True:
         try:

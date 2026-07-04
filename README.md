@@ -20,7 +20,7 @@
 |---|---|---|
 | 编排 | `intent → rag → 条件路由 → 专职 Agent` | LangGraph `StateGraph` + `add_conditional_edges` |
 | 多 Agent | 技术 / 账单 / 通用 / 转人工，低置信降级 + 运行时兜底 | 条件路由 + 双层降级 |
-| 工具调用 | billing/technical 挂真实业务工具（查账单/退款进度/建工单），ToolNode 循环 + 失败降级 | `bind_tools` + `ToolNode` + 条件边回流 |
+| 工具调用 | billing/technical 挂真实业务工具（查账单/退款进度/建工单），Web/CLI 可选择 demo 身份并将 `session_user_id` 注入工具调用 config 以演示跨用户拦截；该身份由客户端声明、非真实认证 | `bind_tools` + `ToolNode` + 条件边回流 |
 | 人工审批 | 退款创建前 `interrupt()` 暂停等人工批准/驳回，批准才落库 | interrupt payload kind 协议 + Web 审批模式 |
 | 人工介入 | 转人工时图暂停、坐席输入后恢复 | `interrupt()` + `Command(resume=...)` |
 | RAG | 知识库检索 + rerank，可量化对比 | 硅基流动 embedding/rerank + Chroma + BM25 对照 |
@@ -28,7 +28,7 @@
 | 评测 | 检索层指标 + 端到端答案质量（LLM-judge）+ LangSmith | 自建测试集 / `langsmith` |
 | 前端 | 决策轨迹实时可视化、流式打字、坐席模式 | FastAPI + 原生 HTML/JS（SSE） |
 
-**实测数据**：RAG 在弱检索器(BM25)下 rerank 把 Hit@1 87.3%→92.7%、MRR 0.873→0.927；端到端答案质量（DeepSeek-judge）准确性 4.92 / 有用性 4.85（满分 5）；工具调用基线集 22–24/24（最新单次 22/24，LLM 非确定，两条技术样本在“先查服务状态”上摇摆）。对抗集曾以 13/15 暴露工具层无鉴权、显式“别查系统”误触发、条件多意图未自动编排；已修工具层归属鉴权，并用 billing prompt 缓解显式限制查询误触发（`hard-adversarial-negative-03` N=5 合规率 0/5→5/5；technical prompt 保持原样），最新 hard 17/17（notfound-01 的“查无”判据已从固定词表升级为语义判断，措辞差异不再误判）。条件多步里“查完再按条件写”这步不作为缺陷强修——写操作（建退款单）停下确认与退款人工审批门一致，属安全默认而非 bug。
+**实测数据**：RAG 在弱检索器(BM25)下 rerank 把 Hit@1 87.3%→92.7%、MRR 0.873→0.927；端到端答案质量（DeepSeek-judge）准确性 4.92 / 有用性 4.85（满分 5）；工具调用基线集 22–24/24（最新单次 22/24，LLM 非确定，两条技术样本在“先查服务状态”上摇摆）。对抗集曾以 13/15 暴露工具层无鉴权、显式“别查系统”误触发、条件多意图未自动编排；已修工具层归属鉴权，Web/CLI 已接入客户端声明的 demo 身份来端到端演示跨用户拦截（非认证，生产须由服务端从已认证会话派生身份），并用 billing prompt 缓解显式限制查询误触发（`hard-adversarial-negative-03` N=5 合规率 0/5→5/5；technical prompt 保持原样），最新 hard 17/17（notfound-01 的“查无”判据已从固定词表升级为语义判断，措辞差异不再误判）。条件多步里“查完再按条件写”这步不作为缺陷强修——写操作（建退款单）停下确认与退款人工审批门一致，属安全默认而非 bug。
 
 ## 快速开始
 

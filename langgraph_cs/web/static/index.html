@@ -34,6 +34,23 @@
           <span class="status-dot" id="status-dot"></span>
           <span class="status-text" id="status-text">就绪</span>
         </span>
+        <label class="identity-select-wrap" title="Demo 身份：客户端声明，非认证">
+          <span class="identity-label">身份</span>
+          <select id="identity-select" class="identity-select" aria-label="选择 demo 身份">
+            <option value="">游客（未登录）</option>
+            <option value="user_001">user_001</option>
+            <option value="user_002">user_002</option>
+            <option value="user_003">user_003</option>
+            <option value="user_004">user_004</option>
+            <option value="user_005">user_005</option>
+            <option value="user_006">user_006</option>
+            <option value="user_007">user_007</option>
+            <option value="user_008">user_008</option>
+            <option value="user_009">user_009</option>
+            <option value="user_010">user_010</option>
+          </select>
+        </label>
+        <span class="identity-pill" id="identity-pill" title="当前 demo 身份">身份 游客</span>
         <span class="thread-pill" id="thread-pill" title="当前会话 thread_id">会话 —</span>
         <button class="btn-ghost" id="btn-new" title="结束当前会话并开启新 thread_id">结束会话</button>
       </div>

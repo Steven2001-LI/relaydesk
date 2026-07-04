@@ -34,6 +34,8 @@ const seatBannerTextEl = $("#seat-banner-text");
 const approvalActionsEl = $("#approval-actions");
 const approveBtn = $("#btn-approve");
 const rejectBtn = $("#btn-reject");
+const identitySelect = $("#identity-select");
+const identityPill = $("#identity-pill");
 const threadPill = $("#thread-pill");
 const newBtn = $("#btn-new");
 const welcomeEl = $("#welcome");   // 开场气泡（首条用户消息后折叠）
@@ -115,10 +117,12 @@ function confidenceLevel(conf) {
 //    导致整段 app.js 在此中断、所有事件绑定都不执行（表现为"按钮/回车没反应"）。
 const THREAD_STORAGE_KEY = "relaydesk_thread_id";
 const LEGACY_THREAD_STORAGE_KEY = "echomind_thread_id";
+const SESSION_USER_STORAGE_KEY = "relaydesk_session_user_id";
 
 // ── 会话状态 ─────────────────────────────────────────────
 const state = {
   threadId: loadThreadId(),
+  sessionUserId: loadSessionUserId(),
   seatMode: false,    // 是否处于坐席模式（命中 interrupt 后为 true）
   approvalMode: false, // 是否处于审批模式（敏感操作 interrupt 后为 true）
   busy: false,        // 是否有请求在飞（避免并发发送）
@@ -147,8 +151,22 @@ function newThreadId() {
   return "t-" + Date.now() + "-" + Math.random().toString(16).slice(2);
 }
 
+function loadSessionUserId() {
+  return (localStorage.getItem(SESSION_USER_STORAGE_KEY) || "").trim();
+}
+
+function saveSessionUserId(userId) {
+  const value = (userId || "").trim();
+  if (value) localStorage.setItem(SESSION_USER_STORAGE_KEY, value);
+  else localStorage.removeItem(SESSION_USER_STORAGE_KEY);
+}
+
 function renderThreadPill() {
   threadPill.textContent = "会话 " + state.threadId.slice(0, 8);
+}
+
+function renderIdentityPill() {
+  identityPill.textContent = "身份 " + (state.sessionUserId || "游客");
 }
 
 // ── 连接状态小圆点 ───────────────────────────────────────
@@ -179,6 +197,34 @@ const TOOL_LABEL = {
 
 function toolLabel(name) {
   return TOOL_LABEL[name] || name || "未知工具";
+}
+
+function normalizeSessionUserId(sessionUserId) {
+  return (sessionUserId || "").trim();
+}
+
+function buildChatBody(message, threadId, sessionUserId) {
+  return {
+    message,
+    thread_id: threadId,
+    session_user_id: normalizeSessionUserId(sessionUserId),
+  };
+}
+
+function buildSeatResumeBody(threadId, sessionUserId, seatReply) {
+  return {
+    thread_id: threadId,
+    session_user_id: normalizeSessionUserId(sessionUserId),
+    seat_reply: seatReply,
+  };
+}
+
+function buildApprovalResumeBody(threadId, sessionUserId, approved, note) {
+  return {
+    thread_id: threadId,
+    session_user_id: normalizeSessionUserId(sessionUserId),
+    approval: { approved, note },
+  };
 }
 
 function escapeHtml(s) {
@@ -742,7 +788,7 @@ async function sendUserMessage(text) {
   const bot = createBotMessage();
   const { interrupted, aborted } = await runStream(
     "/api/chat",
-    { message: text, thread_id: state.threadId },
+    buildChatBody(text, state.threadId, state.sessionUserId),
     bot
   );
   if (aborted) return false;
@@ -758,7 +804,7 @@ async function sendSeatReply(text) {
   seatFlowReply(text);        // 三段状态卡：点亮 ③ 人工回复 + 填入内容
   const { interrupted, failed, aborted } = await runStream(
     "/api/resume",
-    { thread_id: state.threadId, seat_reply: text },
+    buildSeatResumeBody(state.threadId, state.sessionUserId, text),
     bot,
     { isResume: true }
   );
@@ -790,7 +836,7 @@ async function sendApprovalDecision(approved) {
   try {
     const { interrupted, failed, aborted } = await runStream(
       "/api/resume",
-      { thread_id: state.threadId, approval: { approved, note } },
+      buildApprovalResumeBody(state.threadId, state.sessionUserId, approved, note),
       bot,
       { isResume: true }
     );
@@ -861,12 +907,17 @@ function autoGrow() {
 
 // ── 结束会话：重置 thread_id + 清空对话 + 退出坐席模式 + 重置 pipeline / 三段卡 ──
 //   （等价于「新会话」：是可用的业务操作，把当前会话清空、开启新 thread_id）
-function resetSession() {
+function resetSession({ keepIdentity = true, notice = "" } = {}) {
   if (state.activeStream) {
     state.activeStream.abort();
     state.activeStream = null;
   }
   state.busy = false;
+  if (!keepIdentity) {
+    state.sessionUserId = "";
+    saveSessionUserId("");
+    if (identitySelect) identitySelect.value = "";
+  }
   state.threadId = newThreadId();
   localStorage.setItem(THREAD_STORAGE_KEY, state.threadId);
   localStorage.removeItem(LEGACY_THREAD_STORAGE_KEY);
@@ -883,7 +934,21 @@ function resetSession() {
   }
   if (welcomeEl) welcomeEl.hidden = false;
   renderThreadPill();
+  renderIdentityPill();
+  if (notice) addSysLine(notice);
   inputEl.focus();
+}
+
+function onIdentityChange() {
+  const nextUserId = (identitySelect.value || "").trim();
+  if (nextUserId === state.sessionUserId) return;
+  state.sessionUserId = nextUserId;
+  saveSessionUserId(nextUserId);
+  const label = nextUserId || "游客";
+  resetSession({
+    keepIdentity: true,
+    notice: `已切换 demo 身份为 ${label}，并开启新会话。`,
+  });
 }
 
 // ── 重新提问：重发上一条用户消息（坐席模式 / 忙时禁用） ──
@@ -904,6 +969,7 @@ sendBtn.addEventListener("click", onSubmit);
 approveBtn.addEventListener("click", () => sendApprovalDecision(true));
 rejectBtn.addEventListener("click", () => sendApprovalDecision(false));
 newBtn.addEventListener("click", resetSession);
+identitySelect.addEventListener("change", onIdentityChange);
 inputEl.addEventListener("input", autoGrow);
 inputEl.addEventListener("keydown", (e) => {
   // Enter 发送，Shift+Enter 换行
@@ -914,7 +980,9 @@ inputEl.addEventListener("keydown", (e) => {
 });
 
 // 初始化
+identitySelect.value = state.sessionUserId;
 renderThreadPill();
+renderIdentityPill();
 resetPipeline();
 seatFlowReset();
 inputEl.focus();

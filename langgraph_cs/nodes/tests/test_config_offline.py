@@ -28,9 +28,20 @@ def test_require_api_key_fails_without_env():
     print("✓ 缺 DEEPSEEK_API_KEY：require_api_key() 抛 RuntimeError，错误信息包含 .env")
 
 
+def test_build_session_config_omits_empty_session_user_id():
+    """空身份必须省略 session_user_id；非空身份 trim 后注入。"""
+    assert config_mod.build_session_config("t-1") == {"configurable": {"thread_id": "t-1"}}
+    assert config_mod.build_session_config("t-2", "   ") == {"configurable": {"thread_id": "t-2"}}
+    assert config_mod.build_session_config("t-3", " user_001 ") == {
+        "configurable": {"thread_id": "t-3", "session_user_id": "user_001"}
+    }
+    print("✓ build_session_config：空身份省略，非空身份 trim 后注入")
+
+
 def _run_all():
     tests = [
         test_require_api_key_fails_without_env,
+        test_build_session_config_omits_empty_session_user_id,
     ]
     for t in tests:
         t()

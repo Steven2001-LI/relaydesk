@@ -59,11 +59,13 @@ class FakeGraph:
         self._raise = raise_on_stream
         self.inputs = []
         self.resume_values = []
+        self.configs = []
 
     def stream(self, graph_input, config=None, stream_mode=None):
         if self._raise:
             raise RuntimeError("模拟 LLM/检索炸了")
         self.inputs.append(graph_input)
+        self.configs.append(config)
         if isinstance(graph_input, Command):
             self.resume_values.append(graph_input.resume)
         seq = self._resume_seq if isinstance(graph_input, Command) else self._normal_seq
@@ -160,6 +162,38 @@ def test_chat_normal_flow():
     done = next(e for e in events if e["type"] == "done")
     assert done["escalated"] is False
     print("✓ /api/chat 正常流：meta/rag/route/token×2/done 顺序与字段正确，token 拼接=", tokens)
+
+
+def test_chat_injects_session_user_id_when_present():
+    """chat 带 demo 身份时，config.configurable 注入 session_user_id。"""
+    fake = FakeGraph(normal_seq=[], state_values={"escalated": False})
+    client = _make_client(fake)
+
+    resp = client.post(
+        "/api/chat",
+        json={"message": "查账单", "thread_id": "t-auth", "session_user_id": " user_001 "},
+    )
+    assert resp.status_code == 200
+    configurable = fake.configs[-1]["configurable"]
+    assert configurable == {"thread_id": "t-auth", "session_user_id": "user_001"}, configurable
+    print("✓ /api/chat：带 session_user_id 时注入 config.configurable")
+
+
+def test_chat_omits_empty_session_user_id_for_demo_mode():
+    """chat 不带/空 demo 身份时，config 不含 session_user_id，保留 demo 开放模式。"""
+    cases = [
+        {"message": "查账单", "thread_id": "t-auth-open"},
+        {"message": "查账单", "thread_id": "t-auth-blank", "session_user_id": "   "},
+    ]
+    for body in cases:
+        fake = FakeGraph(normal_seq=[], state_values={"escalated": False})
+        client = _make_client(fake)
+        resp = client.post("/api/chat", json=body)
+        assert resp.status_code == 200
+        configurable = fake.configs[-1]["configurable"]
+        assert configurable == {"thread_id": body["thread_id"]}, configurable
+        assert "session_user_id" not in configurable, configurable
+    print("✓ /api/chat：缺失/空 session_user_id 时省略该键，保留 demo 模式")
 
 
 def test_route_emitted_before_first_token():
@@ -346,6 +380,30 @@ def test_chat_interrupt_then_resume():
     print("✓ interrupt->resume：chat 发 interrupt（无 done），resume 发坐席 token + done(escalated=True)")
 
 
+def test_resume_injects_session_user_id_for_seat_reply():
+    """转人工 resume 带 demo 身份时，config.configurable 注入 session_user_id。"""
+    resume_seq = [
+        ("messages", (_full("您好", id="seat-reply-auth"), {"langgraph_node": "escalation"})),
+        ("updates", {"escalation": {"messages": ["..."], "escalated": True}}),
+    ]
+    fake = FakeGraph(
+        normal_seq=[],
+        resume_seq=resume_seq,
+        state_values={"intent": "escalation", "confidence": 0.99, "retrieved_docs": [], "escalated": True},
+    )
+    client = _make_client(fake)
+
+    resp = client.post(
+        "/api/resume",
+        json={"thread_id": "t-resume-auth", "session_user_id": " user_001 ", "seat_reply": "您好"},
+    )
+    assert resp.status_code == 200
+    configurable = fake.configs[-1]["configurable"]
+    assert configurable == {"thread_id": "t-resume-auth", "session_user_id": "user_001"}, configurable
+    assert fake.resume_values == ["您好"], fake.resume_values
+    print("✓ /api/resume：坐席 resume 带 session_user_id 时注入 config.configurable")
+
+
 def test_chat_approval_interrupt_payload():
     """审批中断：interrupt 事件透传 kind/action/params/prompt，且中断时不发 done。"""
     interrupt_obj = Interrupt(
@@ -418,6 +476,35 @@ def test_approval_resume_uses_structured_resume_and_done_not_escalated():
     print("✓ approval resume：结构化 resume 传入图；tool 可早于 route；done.escalated=false")
 
 
+def test_approval_resume_injects_session_user_id():
+    """审批 resume 也必须带 demo 身份，避免恢复路径鉴权不一致。"""
+    resume_seq = [
+        ("updates", {"tools": {"messages": [
+            ToolMessage(content='{"created": true}', name="create_refund_ticket", tool_call_id="call_refund_1")
+        ]}}),
+    ]
+    fake = FakeGraph(
+        normal_seq=[],
+        resume_seq=resume_seq,
+        state_values={"intent": "billing", "confidence": 0.96, "retrieved_docs": [], "escalated": False},
+    )
+    client = _make_client(fake)
+
+    resp = client.post(
+        "/api/resume",
+        json={
+            "thread_id": "t-approval-auth",
+            "session_user_id": "user_001",
+            "approval": {"approved": True, "note": ""},
+        },
+    )
+    assert resp.status_code == 200
+    configurable = fake.configs[-1]["configurable"]
+    assert configurable == {"thread_id": "t-approval-auth", "session_user_id": "user_001"}, configurable
+    assert fake.resume_values == [{"approved": True, "note": ""}], fake.resume_values
+    print("✓ /api/resume：审批 resume 带 session_user_id 时注入 config.configurable")
+
+
 def test_approval_resume_rejects_non_bool_approved():
     """审批 resume 的 approved 必须是 bool，1/'yes' 等真值不允许通过 server 校验。"""
     fake = FakeGraph(normal_seq=[])
@@ -480,12 +567,16 @@ def _run_all():
     tests = [
         test_index_returns_html,
         test_chat_normal_flow,
+        test_chat_injects_session_user_id_when_present,
+        test_chat_omits_empty_session_user_id_for_demo_mode,
         test_route_emitted_before_first_token,
         test_chat_dedups_resent_agent_message,
         test_tool_call_stream_events_and_final_answer_dedup,
         test_chat_interrupt_then_resume,
+        test_resume_injects_session_user_id_for_seat_reply,
         test_chat_approval_interrupt_payload,
         test_approval_resume_uses_structured_resume_and_done_not_escalated,
+        test_approval_resume_injects_session_user_id,
         test_approval_resume_rejects_non_bool_approved,
         test_approval_resume_rejects_malformed_requests,
         test_chat_error_event_on_exception,

@@ -135,6 +135,8 @@ body {
 
 /* 顶栏小部件统一高度 28px */
 .status,
+.identity-select-wrap,
+.identity-pill,
 .thread-pill,
 .btn-ghost {
   height: 28px;
@@ -173,6 +175,39 @@ body {
   color: var(--ink-soft);
   background: var(--panel);
   border: 1px solid var(--line);
+  padding: 0 10px;
+  border-radius: 999px;
+}
+
+.identity-select-wrap {
+  gap: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 0 8px;
+  border-radius: 999px;
+}
+.identity-label {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.identity-select {
+  min-width: 92px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.identity-select option {
+  color: #0b1020;
+}
+.identity-pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: rgba(52, 229, 196, .08);
+  border: 1px solid rgba(52, 229, 196, .18);
   padding: 0 10px;
   border-radius: 999px;
 }

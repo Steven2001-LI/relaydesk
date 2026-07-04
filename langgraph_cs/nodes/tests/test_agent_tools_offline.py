@@ -9,9 +9,12 @@ Agent 工具循环的**离线**单测（真实 build_graph，不联网）。
 运行：
     langgraph_cs/.venv/bin/python -m langgraph_cs.nodes.tests.test_agent_tools_offline
 """
+import json
+
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
+from langgraph_cs.config import build_session_config
 from langgraph_cs import graph as graph_mod
 from langgraph_cs.nodes import agent as agent_mod
 from langgraph_cs.nodes import tools as tools_mod
@@ -225,6 +228,131 @@ def test_create_refund_ticket_interrupt_non_dict_resume_rejected():
     print("✓ create_refund_ticket：非 dict resume 按驳回处理，不落库")
 
 
+def test_session_user_id_denies_cross_user_bill_in_real_graph():
+    """真实图 + 注入身份：跨用户账单工具返回 authz denied，最终回复不泄露他人数据。"""
+    shared = _SharedScript(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "query_bill",
+                        "args": {"bill_id": "BILL-X"},
+                        "id": "call_bill_x",
+                    }
+                ],
+            ),
+            AIMessage(content="抱歉，您无权查看该账单。"),
+        ]
+    )
+
+    restores = [
+        _patch(graph_mod, "intent_node", lambda state: {"intent": "billing", "confidence": 0.95, "escalated": False}),
+        _patch(graph_mod, "rag_node", lambda state: {"retrieved_docs": []}),
+        _patch(agent_mod, "build_llm", lambda temperature=0.5: _FakeLLM(shared)),
+        _patch(
+            tools_mod.business_db,
+            "get_bill",
+            lambda bill_id: {
+                "bill_id": bill_id,
+                "user_id": "user_007",
+                "amount_yuan": 199.0,
+                "invoice_status": "已开票",
+            },
+        ),
+    ]
+
+    def run():
+        graph = graph_mod.build_graph()
+        config = build_session_config("authz-cross-user", "user_001")
+        updates = list(
+            graph.stream(
+                {"messages": [HumanMessage(content="查 BILL-X 的发票状态")]},
+                config=config,
+                stream_mode="updates",
+            )
+        )
+        node_names = [next(iter(update.keys())) for update in updates]
+        values = graph.get_state(config).values
+        tool_messages = [msg for msg in values["messages"] if isinstance(msg, ToolMessage)]
+        final = values["messages"][-1]
+        return node_names, tool_messages, final
+
+    node_names, tool_messages, final = _run_with_patches(restores, run)
+
+    assert "tools" in node_names, node_names
+    assert len(tool_messages) == 1, tool_messages
+    tool_data = json.loads(tool_messages[0].content)
+    assert tool_data["authz"] == "denied", tool_data
+    assert tool_data["found"] is False, tool_data
+    assert tool_data["resource"] == "bill", tool_data
+    assert "199" not in tool_messages[0].content and "已开票" not in tool_messages[0].content, tool_messages[0].content
+    assert "199" not in final.content and "已开票" not in final.content, final.content
+    print("✓ session_user_id 注入真实图：跨用户 query_bill 返回 authz denied，且不泄露他人账单")
+
+
+def test_no_session_keeps_demo_open_for_cross_user_bill():
+    """真实图 + 无身份：缺 session_user_id 仍保持 demo 开放模式，不误拒跨用户数据。"""
+    shared = _SharedScript(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "query_bill",
+                        "args": {"bill_id": "BILL-X"},
+                        "id": "call_bill_x",
+                    }
+                ],
+            ),
+            AIMessage(content="已查到账单 BILL-X，发票状态为已开票。"),
+        ]
+    )
+
+    restores = [
+        _patch(graph_mod, "intent_node", lambda state: {"intent": "billing", "confidence": 0.95, "escalated": False}),
+        _patch(graph_mod, "rag_node", lambda state: {"retrieved_docs": []}),
+        _patch(agent_mod, "build_llm", lambda temperature=0.5: _FakeLLM(shared)),
+        _patch(
+            tools_mod.business_db,
+            "get_bill",
+            lambda bill_id: {
+                "bill_id": bill_id,
+                "user_id": "user_007",
+                "amount_yuan": 199.0,
+                "invoice_status": "已开票",
+            },
+        ),
+    ]
+
+    def run():
+        graph = graph_mod.build_graph()
+        config = build_session_config("demo-open-cross-user")
+        updates = list(
+            graph.stream(
+                {"messages": [HumanMessage(content="查 BILL-X 的发票状态")]},
+                config=config,
+                stream_mode="updates",
+            )
+        )
+        node_names = [next(iter(update.keys())) for update in updates]
+        values = graph.get_state(config).values
+        tool_messages = [msg for msg in values["messages"] if isinstance(msg, ToolMessage)]
+        final = values["messages"][-1]
+        return node_names, tool_messages, final
+
+    node_names, tool_messages, final = _run_with_patches(restores, run)
+
+    assert "tools" in node_names, node_names
+    assert len(tool_messages) == 1, tool_messages
+    tool_data = json.loads(tool_messages[0].content)
+    assert tool_data["found"] is True, tool_data
+    assert tool_data["bill"]["user_id"] == "user_007", tool_data
+    assert tool_data["bill"]["amount_yuan"] == 199.0, tool_data
+    assert final.content == "已查到账单 BILL-X，发票状态为已开票。", final.content
+    print("✓ 无 session_user_id 真实图：保持 demo 开放模式，不误拒跨用户账单")
+
+
 def test_general_agent_does_not_bind_or_call_tools():
     """general 路径：不 bind_tools，不经过 tools 节点。"""
     shared = _SharedScript([AIMessage(content="这是通用回复。")])
@@ -263,6 +391,8 @@ def _run_all():
         test_create_refund_ticket_interrupt_approved_resume_creates_once,
         test_create_refund_ticket_interrupt_rejected_resume_does_not_create,
         test_create_refund_ticket_interrupt_non_dict_resume_rejected,
+        test_session_user_id_denies_cross_user_bill_in_real_graph,
+        test_no_session_keeps_demo_open_for_cross_user_bill,
         test_general_agent_does_not_bind_or_call_tools,
     ]
     for test in tests:
