@@ -21,6 +21,15 @@ logs/
 # 个人面试谈点，本地留底，不公开
 docs/interview-prep.md
 
+# 内部深度评审（含缺陷清单与面试策略），本地留底，不公开
+docs/project-review.md
+
+# 内部改进计划（工具化路线图），本地留底，不公开
+docs/improvement-plan.md
+
+# 给编码 agent 的任务书，本地留底，不公开
+docs/codex-task.md
+
 # OS / IDE
 .DS_Store
 Thumbs.db
