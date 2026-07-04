@@ -1,0 +1,146 @@
+[
+  {
+    "id": "bill-query-01",
+    "category": "billing",
+    "question": "我是 user_003，帮我查一下我最近的账单",
+    "expected": {"should_call": true, "tool": "query_bill", "args": {"user_id": "user_003"}}
+  },
+  {
+    "id": "bill-query-02",
+    "category": "billing",
+    "question": "帮我看下账单 BILL-20260701-034 的发票状态",
+    "expected": {"should_call": true, "tool": "query_bill", "args": {"bill_id": "BILL-20260701-034"}}
+  },
+  {
+    "id": "bill-query-03",
+    "category": "billing",
+    "question": "user_007 最近有哪些扣费记录？",
+    "expected": {"should_call": true, "tool": "query_bill", "args": {"user_id": "user_007"}}
+  },
+  {
+    "id": "refund-status-01",
+    "category": "billing",
+    "question": "订单 ORD-20260506-003 的退款现在到哪一步了？",
+    "expected": {"should_call": true, "tool": "refund_status", "args": {"order_id": "ORD-20260506-003"}}
+  },
+  {
+    "id": "refund-status-02",
+    "category": "billing",
+    "question": "帮我查一下 ORD-20260518-009 的退款工单状态",
+    "expected": {"should_call": true, "tool": "refund_status", "args": {"order_id": "ORD-20260518-009"}}
+  },
+  {
+    "id": "refund-status-03",
+    "category": "billing",
+    "question": "ORD-20260625-028 这个退货单的退款金额和状态帮我看下",
+    "expected": {"should_call": true, "tool": "refund_status", "args": {"order_id": "ORD-20260625-028"}}
+  },
+  {
+    "id": "refund-create-01",
+    "category": "billing",
+    "question": "我是 user_004，订单 ORD-20260508-004 的空气净化器外壳有裂痕，请帮我提交退款申请",
+    "expected": {"should_call": true, "tool": "create_refund_ticket", "args": {"user_id": "user_004", "order_id": "ORD-20260508-004", "reason": "*"}}
+  },
+  {
+    "id": "refund-create-02",
+    "category": "billing",
+    "question": "user_010 的订单 ORD-20260520-010 还没发货，我不想要了，麻烦申请退款",
+    "expected": {"should_call": true, "tool": "create_refund_ticket", "args": {"user_id": "user_010", "order_id": "ORD-20260520-010", "reason": "*"}}
+  },
+  {
+    "id": "refund-create-03",
+    "category": "billing",
+    "question": "我是 user_001，订单 ORD-20260522-011 的恒温电水壶买错型号了，请发起退款",
+    "expected": {"should_call": true, "tool": "create_refund_ticket", "args": {"user_id": "user_001", "order_id": "ORD-20260522-011", "reason": "*"}}
+  },
+  {
+    "id": "tech-ticket-01",
+    "category": "technical",
+    "question": "我是 user_004，智能门锁 App 蓝牙一直配对失败，请帮我建个技术工单",
+    "expected": {"should_call": true, "tool": "create_ticket", "args": {"user_id": "user_004", "detail": "*"}}
+  },
+  {
+    "id": "tech-ticket-02",
+    "category": "technical",
+    "question": "user_001 的智能窗帘定时场景配置不了，需要远程协助，帮我报障",
+    "expected": {"should_call": true, "tool": "create_ticket", "args": {"user_id": "user_001", "detail": "*"}}
+  },
+  {
+    "id": "tech-ticket-03",
+    "category": "technical",
+    "question": "我是 user_010，会议摄像头升级后还是黑屏，请创建技术支持工单",
+    "expected": {"should_call": true, "tool": "create_ticket", "args": {"user_id": "user_010", "detail": "*"}}
+  },
+  {
+    "id": "service-status-01",
+    "category": "technical",
+    "question": "今天是不是系统故障了？我登录和短信验证码都很慢",
+    "expected": {"should_call": true, "tool": "check_service_status", "args": {}}
+  },
+  {
+    "id": "service-status-02",
+    "category": "technical",
+    "question": "支付服务现在是不是异常？帮我看一下平台大盘状态",
+    "expected": {"should_call": true, "tool": "check_service_status", "args": {}}
+  },
+  {
+    "id": "policy-01",
+    "category": "policy",
+    "question": "退款一般几天到账？",
+    "expected": {"should_call": false}
+  },
+  {
+    "id": "policy-02",
+    "category": "policy",
+    "question": "发票怎么开？需要准备什么信息？",
+    "expected": {"should_call": false}
+  },
+  {
+    "id": "policy-03",
+    "category": "policy",
+    "question": "七天无理由退货的流程是什么？",
+    "expected": {"should_call": false}
+  },
+  {
+    "id": "policy-04",
+    "category": "policy",
+    "question": "会员自动续费可以在哪里关闭？",
+    "expected": {"should_call": false}
+  },
+  {
+    "id": "missing-id-01",
+    "category": "missing_info",
+    "question": "帮我查一下账单",
+    "expected": {"should_call": false}
+  },
+  {
+    "id": "missing-id-02",
+    "category": "missing_info",
+    "question": "我要申请退款",
+    "expected": {"should_call": false}
+  },
+  {
+    "id": "missing-id-03",
+    "category": "missing_info",
+    "question": "帮我看看退款到哪了",
+    "expected": {"should_call": false}
+  },
+  {
+    "id": "missing-id-04",
+    "category": "missing_info",
+    "question": "我的设备连不上网，帮我建个工单",
+    "expected": {"should_call": false}
+  },
+  {
+    "id": "smalltalk-01",
+    "category": "smalltalk",
+    "question": "你好，你是谁？",
+    "expected": {"should_call": false}
+  },
+  {
+    "id": "smalltalk-02",
+    "category": "smalltalk",
+    "question": "谢谢你，先不用处理了",
+    "expected": {"should_call": false}
+  }
+]
