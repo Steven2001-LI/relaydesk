@@ -677,6 +677,25 @@ body {
   background: rgba(52, 229, 196, .35);
 }
 
+/* ── 状态：skipped（本轮未使用，不等同于完成） ── */
+.stage.is-skipped .stage-node {
+  background: rgba(255, 255, 255, .03);
+  border-color: var(--line);
+  color: var(--ink-faint);
+  opacity: .45;
+  box-shadow: none;
+}
+.stage.is-skipped .stage-idx { display: none; }
+.stage.is-skipped .stage-node::after {
+  content: "–";
+  font-size: 15px;
+  color: var(--ink-faint);
+}
+.stage.is-skipped .stage-body { opacity: .55; }
+.stage.is-skipped .stage-label,
+.stage.is-skipped .stage-value { color: var(--ink-faint); }
+.stage.is-skipped .stage-line { background: var(--line); }
+
 /* ── 状态：seat（转人工，琥珀醒目） ── */
 .stage.is-seat .stage-node {
   background: var(--seat-bg);
@@ -788,10 +807,11 @@ body {
   .seat-flow { margin-top: 12px; }
 
   .stages { flex-direction: row; gap: 4px; }
-  .stage { flex: 1; flex-direction: column; align-items: stretch; min-width: 120px; gap: 8px; }
+  .stage { flex: 1; flex-direction: column; align-items: stretch; min-width: 112px; gap: 8px; }
   .stage-rail { flex-direction: row; align-items: center; width: 100%; }
   .stage-line { width: auto; height: 2px; min-height: 0; min-width: 12px; margin: 0 6px; }
   .stage.is-done .stage-line { background: rgba(52, 229, 196, .35); }
+  .stage.is-skipped .stage-line { background: var(--line); }
   .stage-body { padding-bottom: 0; padding-top: 0; }
 
   .chat { border-right: none; }

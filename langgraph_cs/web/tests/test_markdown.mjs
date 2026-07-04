@@ -2,8 +2,8 @@
   renderMarkdown 的离线单测（原生 Node，无构建链、无 DOM、无网络）。
 
   策略：app.js 是浏览器脚本，加载即访问 DOM（$("#messages") 等），不能直接 import。
-  这里只抽取被显式标注的「纯 markdown 函数块」（escapeHtml / classifyLine / renderMarkdown，
-  及其依赖的正则常量），在隔离 vm 沙箱里求值，得到 renderMarkdown 后做断言。
+  这里只抽取被显式标注的「前端纯函数块」（toolLabel / escapeHtml / classifyLine /
+  renderMarkdown，及其依赖常量），在隔离 vm 沙箱里求值后做断言。
 
   核心覆盖（P0-2 修复点）：
     项间夹空行的有序列表 -> 合并进同一个 <ol>，靠浏览器自动顺序编号（不再每项都「1.」）。
@@ -32,12 +32,14 @@ const afterStart = src.indexOf("\n", i) + 1;
 const beforeEnd = src.lastIndexOf("\n", j);
 const block = src.slice(afterStart, beforeEnd);
 
-// 在隔离沙箱里求值，导出 renderMarkdown。
+// 在隔离沙箱里求值，导出纯函数。
 const sandbox = {};
 vm.createContext(sandbox);
-vm.runInContext(block + "\nthis.renderMarkdown = renderMarkdown;", sandbox);
+vm.runInContext(block + "\nthis.renderMarkdown = renderMarkdown; this.toolLabel = toolLabel;", sandbox);
 const renderMarkdown = sandbox.renderMarkdown;
+const toolLabel = sandbox.toolLabel;
 assert.equal(typeof renderMarkdown, "function", "renderMarkdown 未成功导出");
+assert.equal(typeof toolLabel, "function", "toolLabel 未成功导出");
 
 // ── 断言小工具 ──
 let passed = 0;
@@ -52,6 +54,15 @@ const count = (hay, needle) => hay.split(needle).length - 1;
 // ════════════════════════════════════════════════════════
 // 用例
 // ════════════════════════════════════════════════════════
+
+test("工具名中文映射：已知工具转中文，未知工具回退原文", () => {
+  assert.equal(toolLabel("query_bill"), "查询账单");
+  assert.equal(toolLabel("refund_status"), "查询退款进度");
+  assert.equal(toolLabel("create_refund_ticket"), "创建退款工单");
+  assert.equal(toolLabel("create_ticket"), "创建报障工单");
+  assert.equal(toolLabel("check_service_status"), "查询服务状态");
+  assert.equal(toolLabel("unknown_tool"), "unknown_tool");
+});
 
 test("项间夹空行的有序列表 -> 单个 <ol> 顺序编号（P0-2 关键）", () => {
   const md = [

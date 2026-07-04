@@ -129,10 +129,22 @@
             </div>
           </li>
 
-          <!-- ④ 应答 -->
-          <li class="stage" data-stage="answer" id="stage-answer">
+          <!-- ④ 业务工具 -->
+          <li class="stage" data-stage="tool" id="stage-tool">
             <div class="stage-rail" aria-hidden="true">
               <span class="stage-node"><span class="stage-idx">4</span></span>
+              <span class="stage-line"></span>
+            </div>
+            <div class="stage-body">
+              <span class="stage-label">业务工具</span>
+              <span class="stage-value" id="value-tool">待命</span>
+            </div>
+          </li>
+
+          <!-- ⑤ 应答 -->
+          <li class="stage" data-stage="answer" id="stage-answer">
+            <div class="stage-rail" aria-hidden="true">
+              <span class="stage-node"><span class="stage-idx">5</span></span>
             </div>
             <div class="stage-body">
               <span class="stage-label">生成应答</span>
@@ -162,7 +174,7 @@
         </div>
 
         <p class="pipeline-foot">
-          每轮对话实时呈现 <code>intent → rag → route → answer</code>
+          每轮对话实时呈现 <code>intent → rag → route → tool → answer</code>
         </p>
       </aside>
     </div>

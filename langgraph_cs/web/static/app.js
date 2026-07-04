@@ -5,8 +5,8 @@
     1) 多轮聊天：维护 thread_id（localStorage 持久），收发消息气泡。
     2) SSE 流式：POST /api/chat 与 /api/resume 返回 text/event-stream；
        因为 EventSource 只支持 GET，这里用 fetch + ReadableStream 手动解析 SSE。
-    3) signature 决策轨迹 pipeline（调试面板化）：把 meta / rag / route / token 事件实时映射到
-       右侧四阶段的 idle/active/done 点亮（当前步骤高亮、已完成低亮、未开始更弱）；右栏主文案
+    3) signature 决策轨迹 pipeline（调试面板化）：把 meta / rag / route / tool / token 事件实时映射到
+       右侧五阶段的 idle/active/done/skipped 点亮（当前步骤高亮、已完成低亮、未使用灰化）；右栏主文案
        为产品化人话整句（意图识别：…/知识检索：…/路由分发：…/生成应答：…），技术字段进 tooltip。
        每轮发新消息整条重置。
     4) 人话映射 + 合并标签行：技术名集中翻成中文友好词（INTENT_LABEL / AGENT_LABEL 等）；意图/路由/RAG
@@ -20,7 +20,7 @@
     7) 业务操作：结束会话（=重置/清空+新 thread_id）；重新提问快捷操作挂在每条回答气泡下方。
 
   事件协议（与 server.py _stream_graph 对齐，前端绝不改）：
-    meta {intent, confidence} · rag {sources[]} · route {agent} · token {text}
+    meta {intent, confidence} · rag {sources[]} · route {agent} · tool {name, status} · token {text}
     interrupt {kind, action, params, prompt, user_message} · done {escalated} · error {message}
 */
 
@@ -42,17 +42,19 @@ const welcomeEl = $("#welcome");   // 开场气泡（首条用户消息后折叠
 const statusEl = $("#status");
 const statusTextEl = $("#status-text");
 
-// 决策轨迹 pipeline 的四阶段节点 + 值槽 + 标题提示
+// 决策轨迹 pipeline 的五阶段节点 + 值槽 + 标题提示
 const stageEls = {
   intent: $("#stage-intent"),
   rag: $("#stage-rag"),
   route: $("#stage-route"),
+  tool: $("#stage-tool"),
   answer: $("#stage-answer"),
 };
 const valueEls = {
   intent: $("#value-intent"),
   rag: $("#value-rag"),
   route: $("#value-route"),
+  tool: $("#value-tool"),
   answer: $("#value-answer"),
 };
 const pipelineEl = $("#pipeline");
@@ -120,6 +122,7 @@ const state = {
   seatMode: false,    // 是否处于坐席模式（命中 interrupt 后为 true）
   approvalMode: false, // 是否处于审批模式（敏感操作 interrupt 后为 true）
   busy: false,        // 是否有请求在飞（避免并发发送）
+  activeStream: null, // 当前在飞 SSE fetch 的 AbortController（结束会话时主动取消）
   lastUserText: "",   // 上一条用户消息（供「重新提问」重发）
 };
 
@@ -166,6 +169,18 @@ function el(tag, className, html) {
 }
 
 // >>> PURE-MARKDOWN-BLOCK-START（此区间为无 DOM 依赖的纯函数，供 Node 单测原样抽取）
+const TOOL_LABEL = {
+  query_bill: "查询账单",
+  refund_status: "查询退款进度",
+  create_refund_ticket: "创建退款工单",
+  create_ticket: "创建报障工单",
+  check_service_status: "查询服务状态",
+};
+
+function toolLabel(name) {
+  return TOOL_LABEL[name] || name || "未知工具";
+}
+
 function escapeHtml(s) {
   return (s || "").replace(/[&<>"']/g, (c) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
@@ -305,31 +320,32 @@ function createBotMessage({ fromSeat = false } = {}) {
 
   let raw = "";
   // 累积 meta 段（按事件到达陆续填充），finish() 时渲染成一行。
-  const segs = { intent: null, route: null, rag: null };
-  const titles = [];
+  const segs = { intent: null, route: null, rag: null, tool: null };
+  const titles = {};
 
   function renderMeta() {
-    const parts = [segs.intent, segs.route, segs.rag].filter(Boolean);
+    const parts = [segs.intent, segs.route, segs.rag, segs.tool].filter(Boolean);
     if (!parts.length) { meta.remove(); return; }
     // 点分隔：<span> · <span> · <span>，整行可 hover 看技术原值。
     meta.innerHTML = parts
       .map((p) => `<span class="meta-seg">${escapeHtml(p)}</span>`)
       .join('<span class="meta-dot" aria-hidden="true">·</span>');
-    if (titles.length) meta.title = titles.join(" · ");
+    const titleText = ["intent", "route", "rag", "tool"].map((key) => titles[key]).filter(Boolean).join(" · ");
+    if (titleText) meta.title = titleText;
   }
 
   return {
     // 人话 meta 段：key=intent|route|rag，main=主词，title=技术原值（进整行 tooltip）。
     setMetaSeg(key, main, title = "") {
       if (key in segs) segs[key] = main;
-      if (title) titles.push(title);
+      if (title) titles[key] = title;
       renderMeta();
       scrollToBottom();
     },
     // 坐席标签（保留独立 chip 观感，复用 meta 行渲染单段）。
     setSeatTag(main, title = "") {
       segs.route = main;
-      if (title) titles.push(title);
+      if (title) titles.route = title;
       renderMeta();
       scrollToBottom();
     },
@@ -397,12 +413,12 @@ function seatFlowReply(text) {
 // ════════════════════════════════════════════════════════
 // signature：决策轨迹 pipeline 的点亮控制
 // ════════════════════════════════════════════════════════
-const STAGE_ORDER = ["intent", "rag", "route", "answer"];
+const STAGE_ORDER = ["intent", "rag", "route", "tool", "answer"];
 
 function setStage(name, status, value) {
   const node = stageEls[name];
   if (!node) return;
-  node.classList.remove("is-active", "is-done", "is-seat");
+  node.classList.remove("is-active", "is-done", "is-seat", "is-skipped");
   if (status) node.classList.add("is-" + status);
   if (value != null) valueEls[name].textContent = value;
 }
@@ -410,7 +426,7 @@ function setStage(name, status, value) {
 // 每轮用户发新消息前：整条 pipeline 重置为 idle。
 function resetPipeline() {
   for (const name of STAGE_ORDER) {
-    stageEls[name].classList.remove("is-active", "is-done", "is-seat");
+    stageEls[name].classList.remove("is-active", "is-done", "is-seat", "is-skipped");
     valueEls[name].textContent = "待命";
   }
   pipelineHintEl.textContent = "本轮 Agent 内部决策";
@@ -422,7 +438,10 @@ function advancePipeline(name, value) {
   STAGE_ORDER.forEach((s, i) => {
     if (i < idx) {
       // 前序阶段：若还没 done 就标 done（保留各自值）
-      if (!stageEls[s].classList.contains("is-done")) setStage(s, "done");
+      if (
+        !stageEls[s].classList.contains("is-done") &&
+        !stageEls[s].classList.contains("is-skipped")
+      ) setStage(s, "done");
     }
   });
   setStage(name, "active", value);
@@ -435,9 +454,12 @@ function completeStage(name, value) {
 
 // 转人工：把 pipeline 推入醒目的琥珀状态。
 function pipelineToSeat() {
-  // 之前已点亮的 intent（escalation 意图）标 done，应答阶段切坐席态。
+  // 之前已点亮的 intent（escalation 意图）标 done；无工具调用时工具阶段显式标未使用。
   for (const name of STAGE_ORDER) {
     if (stageEls[name].classList.contains("is-active")) setStage(name, "done");
+  }
+  if (!stageEls.tool.classList.contains("is-done") && !stageEls.tool.classList.contains("is-seat")) {
+    setStage("tool", "skipped", "未使用");
   }
   setStage("answer", "seat", "等待坐席接入");
   // 人话主词在前，技术名 human-in-the-loop 降级为括注小字。
@@ -449,7 +471,7 @@ function pipelineToApproval() {
   for (const name of STAGE_ORDER) {
     if (stageEls[name].classList.contains("is-active")) setStage(name, "done");
   }
-  setStage("answer", "seat", "等待人工审批");
+  setStage("tool", "seat", "等待人工审批");
   pipelineHintEl.textContent = "敏感操作审批 · approval";
 }
 
@@ -525,13 +547,68 @@ function exitApprovalMode() {
 // ── 一次"流式请求"的统一处理：chat 与 resume 共用 ──
 //   bot：当前 Agent 气泡句柄；isResume：resume 时 pipeline 走应答阶段而非整轮重置。
 async function runStream(url, payload, bot, { isResume = false } = {}) {
+  const controller = new AbortController();
+  state.activeStream = controller;
   let interrupted = false;
   let failed = false;         // 网络/服务端异常：resume 场景下调用方必须保留中断态 UI 供重试
-  let answered = false;       // 是否已收到第一个 token（点亮④）
+  let answered = false;       // 是否已收到第一个 token（点亮⑤）
+  let toolCount = 0;
+  let toolDoneCount = 0;
+  let toolFinalized = false;
+  const toolNames = [];
+
+  function updateToolMeta() {
+    if (toolCount > 0) {
+      bot.setMetaSeg("tool", `🔧 调用 ${toolCount} 次工具`, toolNames.join(" → "));
+    }
+  }
+
+  function handleToolStart(name) {
+    const label = toolLabel(name);
+    toolCount += 1;
+    toolNames.push(label);
+    toolFinalized = false;
+    advancePipeline("tool", `调用 ${label}…`);
+    updateToolMeta();
+  }
+
+  function handleToolDone(name) {
+    const label = toolLabel(name);
+    // resume 流可能从 tools 节点恢复，只收到 done 而没有本次流内的 start。
+    if (toolCount === 0 || toolDoneCount >= toolCount) {
+      toolCount += 1;
+      toolNames.push(label);
+      updateToolMeta();
+    }
+    toolDoneCount += 1;
+    toolFinalized = false;
+    const done = Math.min(toolDoneCount, toolCount);
+    const value = done >= toolCount ? `已返回 ${done} 次调用` : `已返回 ${done}/${toolCount} 次调用`;
+    advancePipeline("tool", value);
+  }
+
+  function markToolSkippedIfNeeded() {
+    if (
+      toolCount === 0 &&
+      !stageEls.tool.classList.contains("is-skipped") &&
+      !stageEls.tool.classList.contains("is-seat")
+    ) {
+      setStage("tool", "skipped", "未使用");
+    }
+  }
+
+  function finishToolsIfNeeded() {
+    if (toolCount > 0 && !toolFinalized) {
+      completeStage("tool", `完成 ${toolCount} 次调用`);
+      toolFinalized = true;
+    }
+  }
+
   try {
     const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify(payload),
     });
     if (!resp.ok || !resp.body) {
@@ -582,9 +659,19 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
           }
           break;
         }
+        case "tool": {
+          if (evt.status === "start") {
+            handleToolStart(evt.name);
+          } else if (evt.status === "done") {
+            handleToolDone(evt.name);
+          }
+          break;
+        }
         case "token":
-          // 第一个 token -> 点亮④（生成应答中）
+          // 第一个 token -> 工具阶段收束（完成或未使用），再点亮⑤（生成应答中）。
           if (!answered) {
+            if (toolCount > 0) finishToolsIfNeeded();
+            else markToolSkippedIfNeeded();
             answered = true;
             advancePipeline("answer", "正在生成回复…");
           }
@@ -609,8 +696,10 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
           }
           break;
         case "done":
+          if (toolCount > 0) finishToolsIfNeeded();
+          else if (!answered) markToolSkippedIfNeeded();
           bot.finish();
-          // ④ 完成（人话整句「生成应答：已完成」）
+          // ⑤ 完成（人话整句「生成应答：已完成」）
           if (isResume) {
             completeStage("answer", state.approvalMode ? "审批已处理" : "坐席已回复");
           } else if (answered) {
@@ -630,13 +719,18 @@ async function runStream(url, payload, bot, { isResume = false } = {}) {
       }
     });
   } catch (e) {
+    if (e && e.name === "AbortError") {
+      return { interrupted: false, failed: false, aborted: true };
+    }
     console.error(e);
     failed = true;
     bot.setText("连接中断，请检查服务是否在运行。");
     bot.markError();
     setStatus("error", "连接中断");
+  } finally {
+    if (state.activeStream === controller) state.activeStream = null;
   }
-  return { interrupted, failed };
+  return { interrupted, failed, aborted: false };
 }
 
 // ── 发送（普通用户消息）──────────────────────────────────
@@ -646,11 +740,12 @@ async function sendUserMessage(text) {
   state.lastUserText = text;  // 记下用于「重新提问」（快捷操作挂在每条回答气泡下方）
   addUserMessage(text);
   const bot = createBotMessage();
-  const { interrupted } = await runStream(
+  const { interrupted, aborted } = await runStream(
     "/api/chat",
     { message: text, thread_id: state.threadId },
     bot
   );
+  if (aborted) return false;
   return interrupted;
 }
 
@@ -661,12 +756,13 @@ async function sendSeatReply(text) {
   const bot = createBotMessage({ fromSeat: true });
   bot.setSeatTag("人工坐席已接管", "agent=escalation");
   seatFlowReply(text);        // 三段状态卡：点亮 ③ 人工回复 + 填入内容
-  const { interrupted, failed } = await runStream(
+  const { interrupted, failed, aborted } = await runStream(
     "/api/resume",
     { thread_id: state.threadId, seat_reply: text },
     bot,
     { isResume: true }
   );
+  if (aborted) return;
   // 提交失败：后端图仍停在中断点，保留坐席模式供重试（错误状态已由 runStream 展示）。
   if (failed) {
     addSysLine("坐席回复提交失败，请重试");
@@ -692,12 +788,15 @@ async function sendApprovalDecision(approved) {
 
   const bot = createBotMessage();
   try {
-    const { interrupted, failed } = await runStream(
+    const { interrupted, failed, aborted } = await runStream(
       "/api/resume",
       { thread_id: state.threadId, approval: { approved, note } },
       bot,
       { isResume: true }
     );
+    if (aborted) {
+      return;
+    }
     if (failed) {
       // 提交失败：后端图仍停在审批中断点。保留审批 UI 与备注供重试，
       // 不覆盖 runStream 已展示的错误状态。
@@ -763,6 +862,11 @@ function autoGrow() {
 // ── 结束会话：重置 thread_id + 清空对话 + 退出坐席模式 + 重置 pipeline / 三段卡 ──
 //   （等价于「新会话」：是可用的业务操作，把当前会话清空、开启新 thread_id）
 function resetSession() {
+  if (state.activeStream) {
+    state.activeStream.abort();
+    state.activeStream = null;
+  }
+  state.busy = false;
   state.threadId = newThreadId();
   localStorage.setItem(THREAD_STORAGE_KEY, state.threadId);
   localStorage.removeItem(LEGACY_THREAD_STORAGE_KEY);
@@ -771,6 +875,7 @@ function resetSession() {
   exitApprovalMode();
   resetPipeline();
   seatFlowReset();
+  setBusy(false);
   setStatus(null, "就绪");
   // 保留开场气泡（第一条），清掉其余；并重新展开开场气泡
   while (messagesEl.children.length > 1) {
