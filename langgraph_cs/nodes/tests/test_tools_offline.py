@@ -11,8 +11,9 @@ import json
 from langgraph_cs.nodes import tools as tools_mod
 
 
-def _call(tool_obj, args=None):
-    return json.loads(tool_obj.invoke(args or {}))
+def _call(tool_obj, args=None, config=None):
+    kwargs = {"config": config} if config is not None else {}
+    return json.loads(tool_obj.invoke(args or {}, **kwargs))
 
 
 def _patch(obj, name, value):
@@ -71,28 +72,99 @@ def test_query_bill_by_user_id():
 
 
 def test_refund_status_hit_miss_error():
-    def fake_status(order_id):
-        if order_id == "ORD-1":
-            return {"order_id": order_id, "has_refund": True, "ticket_status": "处理中"}
+    def fake_order(order_id):
+        if order_id in {"ORD-1", "ORD-X", "ORD-ERR"}:
+            return {"order_id": order_id, "user_id": "user_001"}
         return None
 
+    def fake_status(order_id):
+        if order_id == "ORD-1":
+            return {"order_id": order_id, "user_id": "user_001", "has_refund": True, "ticket_status": "处理中"}
+        return {"order_id": order_id, "user_id": "user_001", "has_refund": False}
+
+    restore_order = _patch(tools_mod.business_db, "get_order", fake_order)
     restore = _patch(tools_mod.business_db, "get_refund_status", fake_status)
     try:
         hit = _call(tools_mod.refund_status, {"order_id": "ORD-1"})
         miss = _call(tools_mod.refund_status, {"order_id": "ORD-X"})
     finally:
         restore()
+        restore_order()
 
+    restore_order = _patch(tools_mod.business_db, "get_order", fake_order)
     restore = _patch(tools_mod.business_db, "get_refund_status", _boom)
     try:
         err = _call(tools_mod.refund_status, {"order_id": "ORD-ERR"})
     finally:
         restore()
+        restore_order()
 
     assert hit["found"] is True and hit["refund_status"]["ticket_status"] == "处理中", hit
     assert miss["found"] is False and miss["order_id"] == "ORD-X", miss
     assert "error" in err, err
     print("✓ refund_status：命中 / 未命中 found=false / 异常 error JSON")
+
+
+def test_session_authz_denies_cross_user_without_side_effects():
+    session_config = {"configurable": {"session_user_id": "user_001"}}
+
+    restore_bill = _patch(
+        tools_mod.business_db,
+        "get_bill",
+        lambda bill_id: {"bill_id": bill_id, "user_id": "user_007", "invoice_status": "已开票"},
+    )
+    try:
+        bill_denied = _call(tools_mod.query_bill, {"bill_id": "BILL-1"}, config=session_config)
+    finally:
+        restore_bill()
+
+    restore_order = _patch(
+        tools_mod.business_db,
+        "get_order",
+        lambda order_id: {"order_id": order_id, "user_id": "user_007"},
+    )
+    restore_status = _patch(
+        tools_mod.business_db,
+        "get_refund_status",
+        lambda order_id: (_ for _ in ()).throw(AssertionError("越权 refund_status 不应读取退款聚合")),
+    )
+    try:
+        refund_denied = _call(tools_mod.refund_status, {"order_id": "ORD-1"}, config=session_config)
+    finally:
+        restore_status()
+        restore_order()
+
+    restore_interrupt = _patch(
+        tools_mod,
+        "interrupt",
+        lambda payload: (_ for _ in ()).throw(AssertionError("越权 create_refund_ticket 不应进入审批")),
+    )
+    try:
+        refund_ticket_denied = _call(
+            tools_mod.create_refund_ticket,
+            {"user_id": "user_008", "order_id": "ORD-1", "reason": "商品损坏"},
+            config=session_config,
+        )
+    finally:
+        restore_interrupt()
+
+    restore_create = _patch(
+        tools_mod.business_db,
+        "create_ticket",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("越权 create_ticket 不应落库")),
+    )
+    try:
+        tech_ticket_denied = _call(
+            tools_mod.create_ticket,
+            {"user_id": "user_008", "detail": "登录失败"},
+            config=session_config,
+        )
+    finally:
+        restore_create()
+
+    for result in [bill_denied, refund_denied, refund_ticket_denied, tech_ticket_denied]:
+        assert result["found"] is False and result["authz"] == "denied", result
+    print("✓ session_user_id：跨用户读/写工具返回 authz denied，且写操作不落库/退款不进审批")
 
 
 def test_create_refund_ticket_approval_hit_miss_error():
@@ -242,6 +314,7 @@ def _run_all():
         test_query_bill_hit_miss_error,
         test_query_bill_by_user_id,
         test_refund_status_hit_miss_error,
+        test_session_authz_denies_cross_user_without_side_effects,
         test_create_refund_ticket_approval_hit_miss_error,
         test_create_refund_ticket_rejects_non_approved_resume,
         test_create_ticket_hit_miss_error,

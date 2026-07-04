@@ -278,7 +278,7 @@ langgraph_cs/.venv/bin/python -m langgraph_cs.eval.answer_eval --self-test
 `eval/tool_eval.py` 评的不是回答文字，而是 Agent 是否**该调工具时调工具、不该调时不乱调**：
 
 ```bash
-# 离线自测：验证集合包含、args 通配、负例判定、重复来源合并、多意图 calls、答案检查，不联网
+# 离线自测：验证集合包含、args 通配、负例判定、重复来源合并、多意图 calls、答案检查、安全判据与 config→tool 鉴权链路，不联网
 langgraph_cs/.venv/bin/python -m langgraph_cs.eval.tool_eval --self-test
 
 # 真实评测：每条单独 thread_id 跑真实 build_graph，顺序执行护 RPM
@@ -308,27 +308,30 @@ langgraph_cs/.venv/bin/python -m langgraph_cs.eval.tool_eval --hard --write-md
 | 工具选择准确率 | 正例里 expected tool 是否出现在实际调用集合中（允许先查重再创建） |
 | 参数准确率 | tool_hit 子集上关键参数是否匹配；`reason`/`detail` 写 `"*"` 表示只要非空即可 |
 | 答案检查 | 对抗集中 `found=false` 等场景要求最终回复如实说明查无，不得补出状态 |
+| 安全检查 | 对跨用户样本接受“模型拒绝不调工具”或“工具返回 `authz=denied`”，并禁止返回/复述他人 `found=true` 数据 |
 
 真实跑法会从两个来源采集工具调用：最终 state 中所有 `AIMessage.tool_calls`，以及 approval interrupt 的
 `payload.params`（等价于 `create_refund_ticket(params)` 被调用）。技术工单 `create_ticket` 会在评测期间
 monkeypatch 成记录器，避免往演示库写脏数据；读工具保持真实业务库。
 
-基线集在 `deepseek-chat`（temperature=0.5，LLM 非确定）下多次复跑为 **22–24/24**（观测 24 / 22 / 22 / 23 / 24）。
+基线集在 `deepseek-chat`（temperature=0.5，LLM 非确定）下多次复跑为 **22–24/24**（观测 24 / 22 / 22 / 23 / 24；最新单次 23/24）。
 摇摆全落在两条技术类样本：`tech-ticket-01`（模型先调无参 `check_service_status`，是否接着调 `create_ticket` 随采样波动）、
 `missing-id-04`（缺 `user_id` 时或反问、或误触发无参 `check_service_status`）——这与对抗集要抓的“欠信息下过度触发工具”是同一现象。
 基线集样本偏易、已饱和，主要作回归 sanity；`eval/tool_results.md` 是该区间内的单次采样。对抗集真实单次结果详见 `eval/tool_hard_results.md`：
 
 | 指标 | 数字 |
 |---|---:|
-| 总通过率 | **13/15 = 86.7%** |
+| 总通过率 | **15/15 = 100.0%** |
 | should-call：该调且调了 / 该调没调 | 7 / 0 |
-| should-call：不该调却调了 / 不该调也没调 | 2 / 6 |
+| should-call：不该调却调了 / 不该调也没调 | 0 / 8 |
 | 正例工具选择准确率 | **100.0%** |
 | tool_hit 子集参数准确率 | **100.0%** |
 
-对抗集失败 2 条，暴露 3 类缺口：工具层无鉴权/归属校验（`hard-cross-user-02` 越权查账单）、
-显式“别查系统”仍被真实订单号诱导误触发（`hard-adversarial-negative-03`）、条件多意图第二步未自动编排
-（`hard-multi-intent-02` 查第一单后停下确认）。这些是评测发现的真实缺口，修复属后续步骤，本步不改系统。
+第 7 步对抗集曾以 **13/15** 暴露 3 类缺口：工具层无鉴权/归属校验、显式“别查系统”仍被真实订单号诱导误触发、
+条件多意图第二步未自动编排。本步已修工具层归属鉴权：`query_bill`、`refund_status`、`create_refund_ticket`、
+`create_ticket` 在注入 `configurable.session_user_id` 时会拒绝跨用户访问；未注入 session 时保留 demo/未认证模式，不默认拒绝。
+最新 hard 回归里 `hard-cross-user-01/02` 均通过安全检查；Web/CLI 登录态接线仍属后续集成范围。`hard-adversarial-negative-03`
+和条件多意图编排仍按 known gap 保留（本次采样没有触发“别查系统”误调用，LLM 非确定）。
 
 ### 4. LangSmith：节点级 trace + 数据集 + evaluate（需 key，上 LangChain 云）
 
@@ -362,7 +365,7 @@ langgraph_cs/.venv/bin/python -m langgraph_cs.eval.langsmith_eval --dry-run
 | `nodes/intent.py` | 意图识别节点（教学版单路，阶段 3 加 `escalation` 意图） | `core/intent_recognizer.py`（三路融合） |
 | `nodes/agent.py` | 多个专职 Agent 节点（technical/billing/general），共享 `_run_agent` 出字 + 失败兜底 | `agents/agent_orchestrator.py` 的 TechnicalAgent/BillingAgent/GeneralAgent |
 | `nodes/router.py` | 路由函数 `route_by_intent`（意图路由 + 低置信度降级） | Orchestrator 的 `_route` / 降级路由 |
-| `nodes/tools.py` | billing/technical 业务工具：查账单、查退款、创建退款/技术工单、查服务大盘；退款工具内含 approval interrupt | 旧版业务接口/服务层散落调用 |
+| `nodes/tools.py` | billing/technical 业务工具：查账单、查退款、创建退款/技术工单、查服务大盘；工具层基于 `session_user_id` 做归属鉴权；退款工具内含 approval interrupt | 旧版业务接口/服务层散落调用 |
 | `business/db.py` | mock SQLite 业务库查询/写入层（orders/bills/tickets） | 旧版外部业务系统/数据库 |
 | `nodes/escalation.py` | 转人工节点：`interrupt()` 暂停等人工，resume 后写回回复 | `_needs_escalation` 关键词检测（占位，未真正阻塞） |
 | `graph.py` | 组装 StateGraph + `add_conditional_edges` + checkpointer 工厂（memory/sqlite 可切换） | Orchestrator 的 run 编排 + 三层路由 + redis 会话 |
@@ -371,7 +374,7 @@ langgraph_cs/.venv/bin/python -m langgraph_cs.eval.langsmith_eval --dry-run
 | `web/static/` | 原生 HTML/JS/CSS 单页：五阶段决策轨迹、工具调用 meta、打字机、坐席模式、审批模式、在飞流 abort | （新增能力，旧版无对应） |
 | `scripts/seed_business_db.py` | 一键重建 mock 业务库，提供工具演示/评测用的确定性订单、账单、工单数据 | （新增能力，旧版无对应） |
 | `scripts/verify_persistence.py` | 离线证明 SqliteSaver 跨进程持久化（本进程写 → 子进程读回断言） | redis 会话持久化的验证 |
-| `eval/tool_eval.py` | 工具调用质量评测（should-call / tool selection / args accuracy），含离线 self-test 与 Markdown 报告 | （新增能力，旧版无对应） |
+| `eval/tool_eval.py` | 工具调用质量评测（should-call / tool selection / args accuracy / authz security checks），含离线 self-test 与 Markdown 报告 | （新增能力，旧版无对应） |
 | `eval/answer_eval.py` | 端到端答案质量评测（跑图 + DeepSeek judge 打分，本地保底，不上云） | （新增能力，旧版无对应） |
 | `eval/langsmith_eval.py` | LangSmith trace + 数据集 + `evaluate` 端到端评测（需 key、上云） | （新增能力，旧版无对应） |
 

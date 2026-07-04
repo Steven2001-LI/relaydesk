@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 
+from langchain_core.runnables.config import ensure_config
 from langchain_core.tools import tool
 from langgraph.types import interrupt
 
@@ -21,6 +22,35 @@ def _json(data) -> str:
 
 def _error(ex: Exception) -> str:
     return _json({"error": str(ex)})
+
+
+def _session_user_id() -> str:
+    """
+    读取带外注入的登录态用户。
+
+    身份只来自 Runnable config，不从用户消息文本解析；未注入时视为 demo/未认证模式，
+    工具保持原行为，不做归属校验。
+    """
+    configurable = ensure_config().get("configurable", {})
+    return str(configurable.get("session_user_id") or "").strip()
+
+
+def _authz_denied(resource: str = "data") -> str:
+    return _json({
+        "found": False,
+        "reason": "无权访问他人数据",
+        "authz": "denied",
+        "resource": resource,
+    })
+
+
+def _authorize_owner(owner_user_id: str | None, resource: str) -> str | None:
+    session_user_id = _session_user_id()
+    if not session_user_id:
+        return None
+    if owner_user_id and owner_user_id == session_user_id:
+        return None
+    return _authz_denied(resource)
 
 
 @tool
@@ -38,8 +68,14 @@ def query_bill(bill_id: str = "", user_id: str = "") -> str:
             bill = business_db.get_bill(bill_id)
             if bill is None:
                 return _json({"found": False, "bill_id": bill_id, "reason": "未找到该账单"})
+            denied = _authorize_owner(bill.get("user_id"), "bill")
+            if denied is not None:
+                return denied
             return _json({"found": True, "query_type": "bill_id", "bill": bill})
         if user_id:
+            denied = _authorize_owner(user_id, "bills")
+            if denied is not None:
+                return denied
             bills = business_db.list_bills(user_id)
             if not bills:
                 return _json({"found": False, "user_id": user_id, "reason": "该用户暂无账单"})
@@ -60,6 +96,12 @@ def refund_status(order_id: str = "") -> str:
         order_id = (order_id or "").strip()
         if not order_id:
             return _json({"found": False, "reason": "缺少 order_id"})
+        order = business_db.get_order(order_id)
+        if order is None:
+            return _json({"found": False, "order_id": order_id, "reason": "未找到该订单"})
+        denied = _authorize_owner(order.get("user_id"), "order")
+        if denied is not None:
+            return denied
         status = business_db.get_refund_status(order_id)
         if status is None:
             return _json({"found": False, "order_id": order_id, "reason": "未找到该订单"})
@@ -84,6 +126,17 @@ def create_refund_ticket(user_id: str = "", order_id: str = "", reason: str = ""
     missing = [name for name, value in {"user_id": user_id, "order_id": order_id, "reason": reason}.items() if not value]
     if missing:
         return _json({"found": False, "reason": "缺少必要信息", "missing": missing})
+
+    session_user_id = _session_user_id()
+    if session_user_id:
+        if user_id != session_user_id:
+            return _authz_denied("refund_ticket")
+        order = business_db.get_order(order_id)
+        if order is None:
+            return _json({"found": False, "order_id": order_id, "reason": "未找到该订单"})
+        denied = _authorize_owner(order.get("user_id"), "order")
+        if denied is not None:
+            return denied
 
     # Demo 假设同一轮只审批一笔退款；若模型并行发起多个 create_refund_ticket，
     # 会产生多个 interrupt，resume 语义不在本步覆盖范围。
@@ -129,6 +182,9 @@ def create_ticket(user_id: str = "", detail: str = "") -> str:
         missing = [name for name, value in {"user_id": user_id, "detail": detail}.items() if not value]
         if missing:
             return _json({"found": False, "reason": "缺少必要信息", "missing": missing})
+        denied = _authorize_owner(user_id, "ticket")
+        if denied is not None:
+            return denied
         ticket = business_db.create_ticket(user_id=user_id, ticket_type="tech", detail=detail)
         return _json({"found": True, "created": True, "ticket": ticket})
     except Exception as ex:  # noqa: BLE001
