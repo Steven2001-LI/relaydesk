@@ -47,6 +47,7 @@ include-package-data = false
 # 显式列出顶层包，让 setuptools 找到 langgraph_cs 及其子包。
 packages = [
     "langgraph_cs",
+    "langgraph_cs.business",
     "langgraph_cs.nodes",
     "langgraph_cs.rag",
     "langgraph_cs.eval",
