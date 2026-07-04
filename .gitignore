@@ -27,8 +27,8 @@ docs/project-review.md
 # 内部改进计划（工具化路线图），本地留底，不公开
 docs/improvement-plan.md
 
-# 给编码 agent 的任务书，本地留底，不公开
-docs/codex-task.md
+# 给编码 agent 的任务书（系列），本地留底，不公开
+docs/codex-task*.md
 
 # OS / IDE
 .DS_Store
