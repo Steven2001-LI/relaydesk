@@ -18,7 +18,7 @@ import uuid
 from collections import defaultdict
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,35 @@ TOOL_LIMIT_PROBE_SUMMARY = [
     ("hard-explicit-tool-limit-01", "5/5", "5/5", "billing 泛化样本，本次保持通过"),
     ("hard-explicit-tool-limit-02", "5/5", "5/5", "旧 technical prompt 已能处理，本步 technical 未改"),
 ]
+
+NotFoundJudge = Callable[[dict, str], tuple[bool, str]]
+NOT_FOUND_WORDS = (
+    "未找到",
+    "查无",
+    "没有找到",
+    "不存在",
+    "无法查询到",
+    "未查询到",
+    "没有查询到",
+    "查询不到",
+    "暂无",
+    "没有查到",
+    "查不到",
+    "没查到",
+)
+NOT_FOUND_JUDGE_SYSTEM_PROMPT = """你是客服评测器，只判断一个很窄的答案约束。
+
+已知事实：本评测用例对应的真实工具查询结果是 found=false，也就是用户询问的订单/账单/退款记录在系统中未找到。
+
+请严格判定客服最终回复是否满足以下条件：
+1. 回复清楚传达了用户询问的订单、账单、退款记录或相关单据未找到、系统查无、无法定位到该记录，或等价语义；
+2. 回复没有编造该记录的具体业务状态、物流状态、退款进度、到账时间、审批结果或工单结果；
+3. 回复不是泛泛道歉、转人工、答非所问，也不是只要求用户补充信息而没有说明查无。
+
+只要语义等价即可，不要求固定措辞；但证据不足一律判 FAIL。
+只返回 JSON，不要输出 Markdown、代码围栏或额外解释。
+格式：
+{"verdict":"PASS或FAIL","reason":"一句不超过40字的中文理由"}"""
 
 
 def load_dataset(path: Path = DATASET_PATH) -> list[dict]:
@@ -356,7 +385,62 @@ def _extract_final_reply_from_state(values: dict) -> str:
     return ""
 
 
-def answer_checks_result(item: dict, final_reply: str) -> tuple[bool | None, str]:
+def _strip_json_fence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = stripped.splitlines()
+    if lines and lines[0].strip().startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _parse_not_found_judge_response(text: str) -> tuple[bool, str]:
+    data = json.loads(_strip_json_fence(text))
+    if not isinstance(data, dict):
+        raise ValueError("judge response is not a JSON object")
+    verdict = str(data.get("verdict") or "").strip().upper()
+    reason = str(data.get("reason") or "").strip() or "-"
+    if verdict == "PASS":
+        return True, reason
+    if verdict == "FAIL":
+        return False, reason
+    raise ValueError(f"unknown judge verdict: {verdict or '-'}")
+
+
+def _not_found_judge_user_prompt(item: dict, final_reply: str) -> str:
+    expected = item.get("expected", {})
+    return (
+        "请按 system 判定以下回复。\n\n"
+        f"【case_id】\n{item.get('id', '-')}\n\n"
+        f"【category】\n{item.get('category', '?')}\n\n"
+        f"【用户问题】\n{item.get('question', '')}\n\n"
+        f"【预期工具】\n{expected.get('tool', '-')}({_stable_json(expected.get('args', {}))})\n\n"
+        "【答案约束】\n"
+        "must_state_not_found=true：最终回复必须如实传达该记录未找到。\n\n"
+        f"【客服最终回复】\n{final_reply}"
+    )
+
+
+def _default_not_found_judge(item: dict, final_reply: str) -> tuple[bool, str]:
+    """只适用于工具结果已知 found=false 的 not_found answer_check，勿复用于其它判据。"""
+    from langgraph_cs.config import build_llm
+
+    llm = build_llm(temperature=0.0)
+    resp = llm.invoke([
+        {"role": "system", "content": NOT_FOUND_JUDGE_SYSTEM_PROMPT},
+        {"role": "user", "content": _not_found_judge_user_prompt(item, final_reply)},
+    ])
+    return _parse_not_found_judge_response(_content_to_text(getattr(resp, "content", "")))
+
+
+def answer_checks_result(
+    item: dict,
+    final_reply: str,
+    judge: NotFoundJudge | None = None,
+) -> tuple[bool | None, str]:
     """
     对 hard 探测里的少量答案约束做轻量检查。
 
@@ -367,18 +451,28 @@ def answer_checks_result(item: dict, final_reply: str) -> tuple[bool | None, str
         return None, "-"
 
     text = final_reply.strip()
+    ok_reason = "OK"
     if checks.get("must_state_not_found"):
-        not_found_words = ("未找到", "查无", "没有找到", "不存在", "无法查询到", "未查询到", "没有查询到", "查询不到", "暂无")
-        if not any(word in text for word in not_found_words):
-            return False, "missing not-found statement"
+        if not any(word in text for word in NOT_FOUND_WORDS):
+            semantic_judge = judge or _default_not_found_judge
+            try:
+                judge_ok, judge_reason = semantic_judge(item, text)
+            except Exception as ex:  # noqa: BLE001 评测兜底：judge 不可用时维持子串失败，不崩。
+                return (
+                    False,
+                    "missing not-found statement; semantic judge unavailable, "
+                    f"kept substring result: {ex}",
+                )
+            if not judge_ok:
+                return False, f"semantic judge FAIL: {judge_reason}"
+            ok_reason = f"OK (semantic judge: {judge_reason})"
 
     if checks.get("forbid_fabrication"):
         status_words = ("待审批", "处理中", "已完成", "已驳回", "退货中", "已发货", "已签收")
-        not_found_words = ("未找到", "查无", "没有找到", "不存在", "无法查询到", "未查询到", "没有查询到", "查询不到", "暂无")
-        if any(word in text for word in status_words) and not any(word in text for word in not_found_words):
+        if any(word in text for word in status_words) and not any(word in text for word in NOT_FOUND_WORDS):
             return False, "possible fabricated status"
 
-    return True, "OK"
+    return True, ok_reason
 
 
 def _answer_check_label(result: dict) -> str:
@@ -766,7 +860,7 @@ def _extract_tool_outputs_from_state(values: dict) -> list[dict]:
     return outputs
 
 
-def run_case(graph, item: dict) -> dict:
+def run_case(graph, item: dict, answer_check_judge: NotFoundJudge | None = None) -> dict:
     """真实跑一条 case，返回 score_case 的逐条结果。"""
     from langchain_core.messages import HumanMessage
 
@@ -808,7 +902,7 @@ def run_case(graph, item: dict) -> dict:
         result["route"] = route or "?"
     result["interrupted"] = interrupted
     result["final_reply"] = _extract_final_reply_from_state(values)
-    answer_ok, answer_reason = answer_checks_result(item, result["final_reply"])
+    answer_ok, answer_reason = answer_checks_result(item, result["final_reply"], judge=answer_check_judge)
     result["answer_check_ok"] = answer_ok
     result["answer_check_diagnosis"] = answer_reason
     if answer_ok is False:
@@ -1135,10 +1229,60 @@ def _self_test() -> None:
             "answer_checks": {"must_state_not_found": True, "forbid_fabrication": True},
         },
     }
-    answer_ok, reason = answer_checks_result(not_found_item, "系统未找到订单 ORD-X，请核对订单号。")
+
+    def _judge_should_not_run(_item: dict, _reply: str) -> tuple[bool, str]:
+        raise AssertionError("judge should not be called")
+
+    answer_ok, reason = answer_checks_result(
+        not_found_item,
+        "系统未找到订单 ORD-X，请核对订单号。",
+        judge=_judge_should_not_run,
+    )
     assert answer_ok is True and reason == "OK", (answer_ok, reason)
-    answer_ok, reason = answer_checks_result(not_found_item, "订单 ORD-X 正在处理中，预计明天到账。")
-    assert answer_ok is False and reason == "missing not-found statement", (answer_ok, reason)
+    answer_ok, reason = answer_checks_result(
+        not_found_item,
+        "系统中没有查到订单 ORD-X 的记录。",
+        judge=_judge_should_not_run,
+    )
+    assert answer_ok is True and reason == "OK", (answer_ok, reason)
+
+    def _semantic_pass_judge(_item: dict, reply: str) -> tuple[bool, str]:
+        assert "没能定位到 ORD-X" in reply, reply
+        return True, "表达了未定位到记录"
+
+    answer_ok, reason = answer_checks_result(
+        not_found_item,
+        "我这边没能定位到 ORD-X 对应的订单记录，请核对编号后再试。",
+        judge=_semantic_pass_judge,
+    )
+    assert answer_ok is True and "semantic judge: 表达了未定位到记录" in reason, (answer_ok, reason)
+
+    answer_ok, reason = answer_checks_result(
+        not_found_item,
+        "订单 ORD-X 正在处理中，预计明天到账。",
+        judge=lambda _item, _reply: (False, "编造了退款进度"),
+    )
+    assert answer_ok is False and reason == "semantic judge FAIL: 编造了退款进度", (answer_ok, reason)
+    answer_ok, reason = answer_checks_result(
+        not_found_item,
+        "您可以在 App 首页查看订单列表。",
+        judge=lambda _item, _reply: (False, "未说明记录查无"),
+    )
+    assert answer_ok is False and reason == "semantic judge FAIL: 未说明记录查无", (answer_ok, reason)
+
+    def _broken_judge(_item: dict, _reply: str) -> tuple[bool, str]:
+        raise RuntimeError("mock judge down")
+
+    answer_ok, reason = answer_checks_result(
+        not_found_item,
+        "我这边没能定位到 ORD-X 对应的订单记录，请核对编号后再试。",
+        judge=_broken_judge,
+    )
+    assert answer_ok is False and "semantic judge unavailable" in reason and "substring result" in reason, (
+        answer_ok,
+        reason,
+    )
+
     fabricate_only = deepcopy(not_found_item)
     fabricate_only["expected"]["answer_checks"] = {"forbid_fabrication": True}
     answer_ok, reason = answer_checks_result(fabricate_only, "订单 ORD-X 当前状态为处理中。")
