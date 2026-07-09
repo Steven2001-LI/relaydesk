@@ -1,9 +1,8 @@
 /*
-  renderMarkdown 的离线单测（原生 Node，无构建链、无 DOM、无网络）。
+  renderMarkdown 等纯函数的离线单测（原生 Node，无构建链、无 DOM、无网络）。
 
-  策略：app.js 是浏览器脚本，加载即访问 DOM（$("#messages") 等），不能直接 import。
-  这里只抽取被显式标注的「前端纯函数块」（toolLabel / escapeHtml / classifyLine /
-  renderMarkdown，及其依赖常量），在隔离 vm 沙箱里求值后做断言。
+  策略：pure.js 是零 DOM 依赖的 ES module（拆分自原单文件 app.js），
+  可以直接 import 求值，不再需要注释 marker + vm 沙箱硬抠代码块。
 
   核心覆盖（P0-2 修复点）：
     项间夹空行的有序列表 -> 合并进同一个 <ol>，靠浏览器自动顺序编号（不再每项都「1.」）。
@@ -11,46 +10,21 @@
   运行：
     node langgraph_cs/web/tests/test_markdown.mjs
 */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import vm from "node:vm";
 import assert from "node:assert/strict";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const APP_JS = join(__dirname, "..", "static", "app.js");
+const PURE_JS = join(__dirname, "..", "static", "js", "pure.js");
 
-// ── 从 app.js 抽取被标注的纯函数块（两个 marker 之间） ──
-const src = readFileSync(APP_JS, "utf8");
-const START = ">>> PURE-MARKDOWN-BLOCK-START";
-const END = "<<< PURE-MARKDOWN-BLOCK-END";
-const i = src.indexOf(START);
-const j = src.indexOf(END);
-assert.ok(i !== -1 && j !== -1 && j > i, "未在 app.js 找到纯 markdown 函数块的 marker");
-// 从 START 行的下一行开始、到 END 行的上一行结束，避免把 marker 注释本身（含 >>> / <<<）带进去。
-const afterStart = src.indexOf("\n", i) + 1;
-const beforeEnd = src.lastIndexOf("\n", j);
-const block = src.slice(afterStart, beforeEnd);
+const {
+  renderMarkdown,
+  toolLabel,
+  buildChatBody,
+  buildSeatResumeBody,
+  buildApprovalResumeBody,
+} = await import(pathToFileURL(PURE_JS));
 
-// 在隔离沙箱里求值，导出纯函数。
-const sandbox = {};
-vm.createContext(sandbox);
-vm.runInContext(
-  block + [
-    "",
-    "this.renderMarkdown = renderMarkdown;",
-    "this.toolLabel = toolLabel;",
-    "this.buildChatBody = buildChatBody;",
-    "this.buildSeatResumeBody = buildSeatResumeBody;",
-    "this.buildApprovalResumeBody = buildApprovalResumeBody;",
-  ].join("\n"),
-  sandbox
-);
-const renderMarkdown = sandbox.renderMarkdown;
-const toolLabel = sandbox.toolLabel;
-const buildChatBody = sandbox.buildChatBody;
-const buildSeatResumeBody = sandbox.buildSeatResumeBody;
-const buildApprovalResumeBody = sandbox.buildApprovalResumeBody;
 assert.equal(typeof renderMarkdown, "function", "renderMarkdown 未成功导出");
 assert.equal(typeof toolLabel, "function", "toolLabel 未成功导出");
 assert.equal(typeof buildChatBody, "function", "buildChatBody 未成功导出");
