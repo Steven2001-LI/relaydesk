@@ -2,7 +2,7 @@
 server.py —— 把 LangGraph 客服图包成 FastAPI 的"web 适配层"。
 
 它做三件事，且**只做这三件**（不碰图/节点/state 的核心逻辑）：
-  1) GET /            返回静态聊天页（static/index.html）；其余静态资源走 StaticFiles。
+  1) GET /            用 Jinja2 渲染聊天页（templates/index.html）；其余静态资源走 StaticFiles。
   2) POST /api/chat   把"用户这一句"喂进图，用 SSE 把图执行过程的内部信号流式吐给前端：
                       意图、RAG 引用、路由到的 Agent、专职 Agent 的增量 token、转人工中断、收尾。
   3) POST /api/resume 命中转人工(interrupt)后，前端切坐席模式，坐席输入经此用
