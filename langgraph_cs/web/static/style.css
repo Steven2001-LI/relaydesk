@@ -55,6 +55,14 @@
   /* 辉光（仅当前步骤点亮用青），reduced-motion 下减弱 */
   --glow-cyan: 0 0 0 1px rgba(52, 229, 196, .5), 0 0 18px rgba(52, 229, 196, .28);
   --glow-seat: 0 0 0 1px rgba(255, 180, 84, .55), 0 0 18px rgba(255, 180, 84, .3);
+
+  /* ── 补充 token（Phase 1 工程纪律清理新增）── */
+  --danger: #ff6b6b;
+  --danger-soft: #ff9d9d;
+  --danger-line: rgba(255, 107, 107, .35);
+  --danger-bg: rgba(255, 107, 107, .1);
+  --seat-2: #e09238;          /* 按钮渐变深色端 */
+  --ink-on-accent: #0b1020;   /* 亮色按钮/渐变上的深色文字；与 --bg 同值但语义不同，不复用 --bg */
 }
 
 * { box-sizing: border-box; }
@@ -164,7 +172,7 @@ body {
 }
 /* 推理中用蓝（用户触发的处理流向）；错误红；坐席橙 */
 .status.is-busy .status-dot { background: var(--blue); box-shadow: 0 0 8px rgba(109, 139, 255, .7); animation: pulse 1.1s ease-in-out infinite; }
-.status.is-error .status-dot { background: #ff6b6b; box-shadow: 0 0 8px rgba(255, 107, 107, .7); }
+.status.is-error .status-dot { background: var(--danger); box-shadow: 0 0 8px rgba(255, 107, 107, .7); }
 .status.is-seat .status-dot { background: var(--seat); box-shadow: 0 0 8px rgba(255, 180, 84, .7); }
 
 @keyframes pulse { 50% { opacity: .35; } }
@@ -200,7 +208,7 @@ body {
   font-size: 11px;
 }
 .identity-select option {
-  color: #0b1020;
+  color: var(--ink-on-accent);
 }
 .identity-pill {
   font-family: var(--font-mono);
@@ -228,8 +236,8 @@ body {
 }
 .btn-ghost:hover {
   background: rgba(255, 107, 107, .08);
-  border-color: rgba(255, 107, 107, .35);
-  color: #ff9d9d;
+  border-color: var(--danger-line);
+  color: var(--danger-soft);
 }
 
 /* ── 转人工系统条（细长、左对齐、低调） ── */
@@ -320,7 +328,7 @@ body {
 /* 用户气泡：蓝（PRD：蓝只用于用户消息 + 主按钮） */
 .msg-user .bubble {
   background: linear-gradient(135deg, var(--blue), var(--blue-2));
-  color: #0b1020;
+  color: var(--ink-on-accent);
   font-weight: 500;
   border-top-right-radius: 4px;
   white-space: pre-wrap;
@@ -382,7 +390,7 @@ body {
 .bubble li .li-desc { color: var(--ink-soft); }
 .msg-bot.from-seat .bubble ol > li::marker { color: var(--seat); }
 .bubble strong { color: var(--cyan); font-weight: 600; }
-.msg-user .bubble strong { color: #0b1020; }
+.msg-user .bubble strong { color: var(--ink-on-accent); }
 .msg-bot.from-seat .bubble strong { color: var(--seat); }
 .bubble code {
   font-family: var(--font-mono);
@@ -447,9 +455,9 @@ body {
 
 /* ── 错误气泡 ── */
 .msg-bot.is-error .bubble {
-  background: rgba(255, 107, 107, .1);
-  color: #ff9d9d;
-  border-color: rgba(255, 107, 107, .35);
+  background: var(--danger-bg);
+  color: var(--danger-soft);
+  border-color: var(--danger-line);
 }
 
 /* 坐席提示：消息流里的细长系统条（左对齐、低调，不居中不大块） */
@@ -521,7 +529,7 @@ body {
   flex: 0 0 auto;
   border: none;
   border-radius: var(--radius-btn);
-  color: #0b1020;
+  color: var(--ink-on-accent);
   background: linear-gradient(135deg, var(--blue), var(--blue-2));
   cursor: pointer;
   transition: transform .12s, opacity .15s, filter .15s;
@@ -549,8 +557,8 @@ body {
   transition: opacity .15s, filter .15s, transform .12s, background .15s;
 }
 .btn-approve {
-  color: #0b1020;
-  background: linear-gradient(135deg, #e09238, var(--seat));
+  color: var(--ink-on-accent);
+  background: linear-gradient(135deg, var(--seat-2), var(--seat));
 }
 .btn-reject {
   color: var(--seat-soft);
@@ -570,7 +578,7 @@ body {
 .composer.seat-mode .input { border-color: var(--seat-line); background: rgba(255, 180, 84, .06); }
 .composer.seat-mode .input:focus,
 .composer.seat-mode .input:focus-visible { border-color: var(--seat); }
-.composer.seat-mode .btn-send { background: linear-gradient(135deg, #e09238, var(--seat)); }
+.composer.seat-mode .btn-send { background: linear-gradient(135deg, var(--seat-2), var(--seat)); }
 
 .composer.approval-mode { background: var(--seat-bg); border-top-color: var(--seat-line); }
 .composer.approval-mode .input { border-color: var(--seat-line); background: rgba(255, 180, 84, .06); }
