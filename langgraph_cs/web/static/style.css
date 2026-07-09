@@ -14,55 +14,130 @@
 */
 
 :root {
-  /* ── 调色板 ── */
-  --bg: #0b1020;          /* 页面底 */
-  --bg-2: #0e1530;        /* 极淡的径向高光叠加用 */
-  --panel: #121a33;       /* 面板/侧栏 */
-  --panel-2: #16203d;     /* 略亮面板（输入框、节点空槽） */
+  /* ── 调色板（亮色 · 默认主题）── */
+  --bg: #fbfbfd;
+  --bg-2: #f1f2f7;
+  --panel: #f6f7fa;
+  --panel-2: #ffffff;
 
-  /* 蓝：用户消息 + 主按钮（PRD 指定 #6D8BFF） */
-  --blue: #6d8bff;
-  --blue-2: #5a78f0;
-  --blue-soft: #aab9ff;
+  /* 蓝：用户消息 + 主按钮 */
+  --blue: #3d5afe;
+  --blue-2: #2f46e0;
+  --blue-soft: #7686ff;
 
-  /* 青：AI / 当前步骤 / 成功（PRD 指定 #34E5C4） */
-  --cyan: #34e5c4;
-  --cyan-soft: #7ef0d9;
+  /* 青：AI / 决策轨迹进行中(--cyan) / 已完成(--cyan-soft，低饱和) */
+  --cyan: #0f8f82;
+  --cyan-soft: #6bb9b0;
 
-  --ink: #e6eaf5;         /* 主文字 */
-  --ink-soft: #8a93b2;    /* 次要文字 */
-  --ink-faint: #59617f;   /* 更弱文字（占位/待命） */
-  --line: rgba(255, 255, 255, .08);   /* 细边框 */
-  --line-strong: rgba(255, 255, 255, .14);
+  /* 绿：全局"就绪/成功"状态灯专用，不进决策轨迹（决策轨迹只用青色系） */
+  --success: #0a8a58;
+  --success-bg: rgba(10, 138, 88, .10);
+
+  --ink: #1a1d29;         /* 主文字 */
+  --ink-soft: #565b70;    /* 次要文字 */
+  --ink-faint: #8b8fa3;   /* 更弱文字（占位/待命） */
+  --line: rgba(10, 12, 24, .08);   /* 细边框 */
+  --line-strong: rgba(10, 12, 24, .14);
 
   /* 橙：转人工 / 警告 / 人工介入 */
-  --seat: #ffb454;
-  --seat-soft: #ffcd8a;
-  --seat-line: rgba(255, 180, 84, .35);
-  --seat-bg: rgba(255, 180, 84, .10);
+  --seat: #b3690a;
+  --seat-soft: #8a5108;
+  --seat-line: rgba(179, 105, 10, .35);
+  --seat-bg: rgba(179, 105, 10, .08);
+  --seat-2: #cf8324;          /* 按钮渐变深色端 */
+
+  /* 红：错误/危险 */
+  --danger: #c92a2a;
+  --danger-soft: #a61e1e;
+  --danger-line: rgba(201, 42, 42, .30);
+  --danger-bg: rgba(201, 42, 42, .07);
+
+  /* 强调色按钮上的文字色：亮色主题按钮本身是深色系强调色，文字要浅色 */
+  --ink-on-accent: #ffffff;
 
   /* ── 统一圆角层级 ── */
-  --radius-bubble: 12px;  /* 气泡 */
-  --radius-btn: 13px;     /* 按钮 12–14 */
-  --radius-tag: 8px;      /* 标签/chip */
-  --radius-panel: 10px;   /* 大面板 8–12 */
+  --radius-bubble: 12px;
+  --radius-btn: 13px;
+  --radius-tag: 8px;
+  --radius-panel: 10px;
 
-  /* 字体栈：标题 / 正文 / 等宽数据 */
+  /* 字体栈：标题 / 正文 / 等宽数据（两套主题共用，不随主题变） */
   --font-display: "Space Grotesk", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   --font-body: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 
-  /* 辉光（仅当前步骤点亮用青），reduced-motion 下减弱 */
-  --glow-cyan: 0 0 0 1px rgba(52, 229, 196, .5), 0 0 18px rgba(52, 229, 196, .28);
-  --glow-seat: 0 0 0 1px rgba(255, 180, 84, .55), 0 0 18px rgba(255, 180, 84, .3);
+  /* 辉光：亮色主题关闭（发光在白底上显脏），暗色主题下方覆盖成真的发光值 */
+  --glow-cyan: none;
+  --glow-seat: none;
 
-  /* ── 补充 token（Phase 1 工程纪律清理新增）── */
+  /* 顶栏渐变（新增效果，C 方向的少量气质点缀） */
+  --topbar-glow-1: rgba(109, 139, 255, .07);
+  --topbar-glow-2: rgba(52, 229, 196, .055);
+
+  /* 毛玻璃层背景（topbar / composer 半透明+模糊时的底色） */
+  --topbar-wash: rgba(255, 255, 255, .72);
+  --composer-wash: rgba(255, 255, 255, .65);
+
+  /* 零散装饰色（原先绑死暗色字面量，现在改令牌，配合 color-mix() 使用） */
+  --code-bg: rgba(10, 12, 24, .06);
+  --skipped-bg: rgba(10, 12, 24, .035);
+  --scrollbar-thumb: rgba(10, 12, 24, .15);
+  --scrollbar-thumb-hover: rgba(10, 12, 24, .25);
+}
+
+/* ════════════════════════════════════════════════════════════
+   暗色主题：token 值覆盖（Phase 1 原有的深色工程控制台配色，
+   --bg/--panel/--panel-2 三个值比 Phase 1 略深/略分层，
+   --topbar-wash/--composer-wash/--glow-* 是本轮新增或恢复发光）
+   ════════════════════════════════════════════════════════════ */
+:root[data-theme="dark"] {
+  --bg: #0a0c16;
+  --bg-2: #0e1530;
+  --panel: #161a2c;
+  --panel-2: #1a2038;
+
+  --blue: #6d8bff;
+  --blue-2: #5a78f0;
+  --blue-soft: #aab9ff;
+
+  --cyan: #34e5c4;
+  --cyan-soft: #7ef0d9;
+
+  --success: #5be8cc;
+  --success-bg: rgba(91, 232, 204, .12);
+
+  --ink: #e6eaf5;
+  --ink-soft: #8a93b2;
+  --ink-faint: #59617f;
+  --line: rgba(255, 255, 255, .08);
+  --line-strong: rgba(255, 255, 255, .14);
+
+  --seat: #ffb454;
+  --seat-soft: #ffcd8a;
+  --seat-line: rgba(255, 180, 84, .35);
+  --seat-bg: rgba(255, 180, 84, .10);
+  --seat-2: #e09238;
+
   --danger: #ff6b6b;
   --danger-soft: #ff9d9d;
   --danger-line: rgba(255, 107, 107, .35);
   --danger-bg: rgba(255, 107, 107, .1);
-  --seat-2: #e09238;          /* 按钮渐变深色端 */
-  --ink-on-accent: #0b1020;   /* 亮色按钮/渐变上的深色文字；与 --bg 同值但语义不同，不复用 --bg */
+
+  --ink-on-accent: #0b1020;
+
+  --glow-cyan: 0 0 0 1px rgba(52, 229, 196, .5), 0 0 18px rgba(52, 229, 196, .28);
+  --glow-seat: 0 0 0 1px rgba(255, 180, 84, .55), 0 0 18px rgba(255, 180, 84, .3);
+
+  --topbar-glow-1: rgba(109, 139, 255, .13);
+  --topbar-glow-2: rgba(52, 229, 196, .09);
+
+  --topbar-wash: rgba(11, 16, 32, .6);
+  --composer-wash: rgba(11, 16, 32, .5);
+
+  --code-bg: rgba(255, 255, 255, .07);
+  --skipped-bg: rgba(255, 255, 255, .03);
+  --scrollbar-thumb: rgba(255, 255, 255, .12);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, .2);
 }
 
 * { box-sizing: border-box; }
@@ -73,16 +148,21 @@ html, body {
 }
 
 body {
-  background:
-    radial-gradient(900px 520px at 100% -8%, rgba(109, 139, 255, .12) 0%, transparent 60%),
-    radial-gradient(800px 480px at -5% 105%, rgba(52, 229, 196, .08) 0%, transparent 55%),
-    var(--bg);
+  background: var(--bg);
   color: var(--ink);
   font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* 暗色主题专属：角落径向高光，亮色主题不需要（mockup 验证过纯色即可） */
+:root[data-theme="dark"] body {
+  background:
+    radial-gradient(900px 520px at 100% -8%, rgba(109, 139, 255, .12) 0%, transparent 60%),
+    radial-gradient(800px 480px at -5% 105%, rgba(52, 229, 196, .08) 0%, transparent 55%),
+    var(--bg);
 }
 
 /* ── 整体：满屏纵向骨架（顶栏 / 系统条 / 主体两栏） ── */
@@ -106,7 +186,9 @@ body {
   gap: 16px;
   padding: 12px 22px;
   border-bottom: 1px solid var(--line);
-  background: rgba(11, 16, 32, .6);
+  background:
+    linear-gradient(120deg, var(--topbar-glow-1), var(--topbar-glow-2) 60%, transparent),
+    var(--topbar-wash);
   backdrop-filter: blur(8px);
 }
 
@@ -118,7 +200,7 @@ body {
   padding: 7px 9px;
   border-radius: var(--radius-tag);
   color: var(--ink);
-  background: rgba(52, 229, 196, .12);
+  background: color-mix(in srgb, var(--cyan) 12%, transparent);
   border: 1px solid var(--line-strong);
   font-family: var(--font-mono);
 }
@@ -167,13 +249,13 @@ body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--cyan);
-  box-shadow: 0 0 8px rgba(52, 229, 196, .7);
+  background: var(--success);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--success) 70%, transparent);
 }
 /* 推理中用蓝（用户触发的处理流向）；错误红；坐席橙 */
-.status.is-busy .status__dot { background: var(--blue); box-shadow: 0 0 8px rgba(109, 139, 255, .7); animation: pulse 1.1s ease-in-out infinite; }
-.status.is-error .status__dot { background: var(--danger); box-shadow: 0 0 8px rgba(255, 107, 107, .7); }
-.status.is-seat .status__dot { background: var(--seat); box-shadow: 0 0 8px rgba(255, 180, 84, .7); }
+.status.is-busy .status__dot { background: var(--blue); box-shadow: 0 0 8px color-mix(in srgb, var(--blue) 70%, transparent); animation: pulse 1.1s ease-in-out infinite; }
+.status.is-error .status__dot { background: var(--danger); box-shadow: 0 0 8px color-mix(in srgb, var(--danger) 70%, transparent); }
+.status.is-seat .status__dot { background: var(--seat); box-shadow: 0 0 8px color-mix(in srgb, var(--seat) 70%, transparent); }
 
 @keyframes pulse { 50% { opacity: .35; } }
 
@@ -214,8 +296,8 @@ body {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--ink-soft);
-  background: rgba(52, 229, 196, .08);
-  border: 1px solid rgba(52, 229, 196, .18);
+  background: color-mix(in srgb, var(--cyan) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cyan) 18%, transparent);
   padding: 0 10px;
   border-radius: 999px;
 }
@@ -235,9 +317,25 @@ body {
   transition: background .15s, border-color .15s, color .15s;
 }
 .btn-ghost:hover {
-  background: rgba(255, 107, 107, .08);
+  background: var(--danger-bg);
   border-color: var(--danger-line);
   color: var(--danger-soft);
+}
+.theme-toggle {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+}
+.theme-toggle__sun,
+.theme-toggle__moon {
+  display: block;
+}
+/* hidden 属性兜底：上面的 display:block（作者样式，0,1,0）会压过 UA 的
+   [hidden]{display:none}，导致 JS 切换 .hidden 后另一个图标仍显示、太阳/月亮
+   不互斥。显式让 [hidden] 的图标真正隐藏，恢复图标互斥切换。 */
+.theme-toggle__sun[hidden],
+.theme-toggle__moon[hidden] {
+  display: none;
 }
 
 /* ── 转人工系统条（细长、左对齐、低调） ── */
@@ -260,7 +358,7 @@ body {
   height: 6px;
   border-radius: 50%;
   background: var(--seat);
-  box-shadow: 0 0 6px rgba(255, 180, 84, .6);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--seat) 60%, transparent);
 }
 
 @keyframes slidedown {
@@ -395,7 +493,7 @@ body {
 .msg__bubble code {
   font-family: var(--font-mono);
   font-size: .88em;
-  background: rgba(255, 255, 255, .07);
+  background: var(--code-bg);
   padding: 1px 5px;
   border-radius: 5px;
 }
@@ -449,7 +547,7 @@ body {
 }
 .btn-quick:hover {
   background: var(--panel-2);
-  border-color: rgba(52, 229, 196, .35);
+  border-color: color-mix(in srgb, var(--cyan) 35%, transparent);
   color: var(--cyan-soft);
 }
 
@@ -489,7 +587,7 @@ body {
   gap: 8px;
   padding: 12px 18px 16px;
   border-top: 1px solid var(--line);
-  background: rgba(11, 16, 32, .5);
+  background: var(--composer-wash);
 }
 .composer__row { display: flex; align-items: flex-end; gap: 10px; }
 
@@ -562,7 +660,7 @@ body {
 }
 .btn-approval--reject {
   color: var(--seat-soft);
-  background: rgba(255, 180, 84, .08);
+  background: color-mix(in srgb, var(--seat) 8%, transparent);
 }
 .btn-approval:hover { filter: brightness(1.06); }
 .btn-approval:active { transform: scale(.97); }
@@ -575,13 +673,13 @@ body {
 
 /* 坐席模式：输入区切琥珀皮肤（克制） */
 .composer.is-seat-mode { background: var(--seat-bg); border-top-color: var(--seat-line); }
-.composer.is-seat-mode .composer__input { border-color: var(--seat-line); background: rgba(255, 180, 84, .06); }
+.composer.is-seat-mode .composer__input { border-color: var(--seat-line); background: color-mix(in srgb, var(--seat) 6%, transparent); }
 .composer.is-seat-mode .composer__input:focus,
 .composer.is-seat-mode .composer__input:focus-visible { border-color: var(--seat); }
 .composer.is-seat-mode .btn-send { background: linear-gradient(135deg, var(--seat-2), var(--seat)); }
 
 .composer.is-approval-mode { background: var(--seat-bg); border-top-color: var(--seat-line); }
-.composer.is-approval-mode .composer__input { border-color: var(--seat-line); background: rgba(255, 180, 84, .06); }
+.composer.is-approval-mode .composer__input { border-color: var(--seat-line); background: color-mix(in srgb, var(--seat) 6%, transparent); }
 .composer.is-approval-mode .composer__input:focus,
 .composer.is-approval-mode .composer__input:focus-visible { border-color: var(--seat); }
 
@@ -683,7 +781,7 @@ body {
 
 /* ── 状态：active（当前步骤，高亮发光，青=当前/AI） ── */
 .stage.is-active .stage__node {
-  background: rgba(52, 229, 196, .14);
+  background: color-mix(in srgb, var(--cyan) 14%, transparent);
   border-color: var(--cyan);
   color: var(--cyan);
   box-shadow: var(--glow-cyan);
@@ -695,14 +793,14 @@ body {
 .stage.is-active .stage__value { color: var(--cyan); }
 
 @keyframes nodepulse {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(52, 229, 196, .5), 0 0 12px rgba(52, 229, 196, .22); }
-  50% { box-shadow: 0 0 0 1px rgba(52, 229, 196, .6), 0 0 22px rgba(52, 229, 196, .42); }
+  0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--cyan) 50%, transparent), 0 0 12px color-mix(in srgb, var(--cyan) 22%, transparent); }
+  50% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--cyan) 60%, transparent), 0 0 22px color-mix(in srgb, var(--cyan) 42%, transparent); }
 }
 
 /* ── 状态：done（已完成，低亮度青稳态 + 打勾，成功=青） ── */
 .stage.is-done .stage__node {
-  background: rgba(52, 229, 196, .08);
-  border-color: rgba(52, 229, 196, .4);
+  background: color-mix(in srgb, var(--cyan-soft) 8%, transparent);
+  border-color: color-mix(in srgb, var(--cyan-soft) 40%, transparent);
   color: var(--cyan-soft);
   opacity: .8;
 }
@@ -713,16 +811,16 @@ body {
   color: var(--cyan);
 }
 .stage.is-done .stage__body { opacity: .75; }
-.stage.is-done .stage__label { color: var(--ink-soft); }
-.stage.is-done .stage__value { color: var(--ink-faint); }
+.stage.is-done .stage__label { color: var(--cyan-soft); }
+.stage.is-done .stage__value { color: var(--cyan-soft); }
 /* 已完成阶段的下游连接线低亮充能（青） */
 .stage.is-done .stage__line {
-  background: rgba(52, 229, 196, .35);
+  background: color-mix(in srgb, var(--cyan-soft) 35%, transparent);
 }
 
 /* ── 状态：skipped（本轮未使用，不等同于完成） ── */
 .stage.is-skipped .stage__node {
-  background: rgba(255, 255, 255, .03);
+  background: var(--skipped-bg);
   border-color: var(--line);
   color: var(--ink-faint);
   opacity: .45;
@@ -822,9 +920,9 @@ body {
 .messages::-webkit-scrollbar,
 .pipeline::-webkit-scrollbar { width: 8px; }
 .messages::-webkit-scrollbar-thumb,
-.pipeline::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .12); border-radius: 8px; }
+.pipeline::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 8px; }
 .messages::-webkit-scrollbar-thumb:hover,
-.pipeline::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, .2); }
+.pipeline::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
 /* ════════════════════════════════════════════════════════════
    响应式：窄屏(<900px) pipeline 折叠到对话上方的横向条
@@ -853,7 +951,7 @@ body {
   .stage { flex: 1; flex-direction: column; align-items: stretch; min-width: 112px; gap: 8px; }
   .stage__rail { flex-direction: row; align-items: center; width: 100%; }
   .stage__line { width: auto; height: 2px; min-height: 0; min-width: 12px; margin: 0 6px; }
-  .stage.is-done .stage__line { background: rgba(52, 229, 196, .35); }
+  .stage.is-done .stage__line { background: color-mix(in srgb, var(--cyan-soft) 35%, transparent); }
   .stage.is-skipped .stage__line { background: var(--line); }
   .stage__body { padding-bottom: 0; padding-top: 0; }
 
