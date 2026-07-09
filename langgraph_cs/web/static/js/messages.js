@@ -45,8 +45,8 @@ export function scrollToBottom() {
 
 export function addUserMessage(text) {
   if (welcomeEl) welcomeEl.hidden = true;
-  const wrap = el("div", "msg msg-user");
-  wrap.appendChild(el("div", "bubble", escapeHtml(text)));
+  const wrap = el("div", "msg msg--user");
+  wrap.appendChild(el("div", "msg__bubble", escapeHtml(text)));
   messagesEl.appendChild(wrap);
   scrollToBottom();
 }
@@ -56,10 +56,10 @@ export function addUserMessage(text) {
 // messages.js 不能反过来 import app.js（app.js 已经要 import messages.js，会成环），
 // 所以把 onRetry 作为 createBotMessage 的可选参数，由调用方（app.js 入口）传入。
 export function createBotMessage({ fromSeat = false, onRetry } = {}) {
-  const wrap = el("div", "msg msg-bot" + (fromSeat ? " from-seat" : ""));
-  const meta = el("div", "meta-line");
-  const bubble = el("div", "bubble typing");
-  const actions = el("div", "bubble-actions");
+  const wrap = el("div", "msg msg--bot" + (fromSeat ? " msg--from-seat" : ""));
+  const meta = el("div", "msg__meta");
+  const bubble = el("div", "msg__bubble is-typing");
+  const actions = el("div", "msg__actions");
   wrap.appendChild(meta);
   wrap.appendChild(bubble);
   wrap.appendChild(actions);
@@ -74,8 +74,8 @@ export function createBotMessage({ fromSeat = false, onRetry } = {}) {
     const parts = [segs.intent, segs.route, segs.rag, segs.tool].filter(Boolean);
     if (!parts.length) { meta.remove(); return; }
     meta.innerHTML = parts
-      .map((p) => `<span class="meta-seg">${escapeHtml(p)}</span>`)
-      .join('<span class="meta-dot" aria-hidden="true">·</span>');
+      .map((p) => `<span class="msg__meta-seg">${escapeHtml(p)}</span>`)
+      .join('<span class="msg__meta-dot" aria-hidden="true">·</span>');
     const titleText = ["intent", "route", "rag", "tool"].map((key) => titles[key]).filter(Boolean).join(" · ");
     if (titleText) meta.title = titleText;
   }
@@ -104,7 +104,7 @@ export function createBotMessage({ fromSeat = false, onRetry } = {}) {
       scrollToBottom();
     },
     finish() {
-      bubble.classList.remove("typing");
+      bubble.classList.remove("is-typing");
       if (raw) bubble.innerHTML = renderMarkdown(raw);
       renderMeta();
     },
@@ -119,7 +119,7 @@ export function createBotMessage({ fromSeat = false, onRetry } = {}) {
     },
     markError() {
       wrap.classList.add("is-error");
-      bubble.classList.remove("typing");
+      bubble.classList.remove("is-typing");
       renderMeta();
     },
     hasText: () => raw.length > 0,
@@ -127,6 +127,6 @@ export function createBotMessage({ fromSeat = false, onRetry } = {}) {
 }
 
 export function addSysLine(text) {
-  messagesEl.appendChild(el("div", "sys-line", escapeHtml(text)));
+  messagesEl.appendChild(el("div", "messages__sys-line", escapeHtml(text)));
   scrollToBottom();
 }

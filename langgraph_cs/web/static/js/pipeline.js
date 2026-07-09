@@ -90,13 +90,14 @@ export function seatFlowReply(text) {
 }
 
 // ── 进入 / 退出坐席模式 ──────────────────────────────────
-// ⚠️ Task 1 阶段先原样保留 "seat-mode"/"approval-mode" 字面量（不加 is- 前缀）；
-//    Task 3（BEM 改名）会把这两个字符串和对应 CSS 选择器一起改成 "is-seat-mode"/"is-approval-mode"。
+// 状态类统一 is- 前缀（Task 3 BEM 改名）：坐席/审批模式对应
+// "is-seat-mode"/"is-approval-mode"，与 style.css 里的 .composer.is-seat-mode /
+// .composer.is-approval-mode 选择器一致。
 export function enterSeatMode(prompt) {
   state.seatMode = true;
   seatBanner.hidden = false;
   seatBannerTextEl.textContent = "已转人工 · 请以坐席身份回复用户";
-  composerEl.classList.add("seat-mode");
+  composerEl.classList.add("is-seat-mode");
   inputEl.placeholder = prompt || "以坐席身份回复用户… Enter 发送";
   setStatus("seat", "坐席模式");
   inputEl.focus();
@@ -105,7 +106,7 @@ export function enterSeatMode(prompt) {
 export function exitSeatMode() {
   state.seatMode = false;
   if (!state.approvalMode) seatBanner.hidden = true;
-  composerEl.classList.remove("seat-mode");
+  composerEl.classList.remove("is-seat-mode");
   if (!state.approvalMode) inputEl.placeholder = "输入消息，Enter 发送 · Shift+Enter 换行";
 }
 
@@ -113,7 +114,7 @@ export function enterApprovalMode(payload) {
   state.approvalMode = true;
   seatBanner.hidden = false;
   seatBannerTextEl.textContent = (payload && payload.prompt) || "待人工审批";
-  composerEl.classList.add("approval-mode");
+  composerEl.classList.add("is-approval-mode");
   approvalActionsEl.hidden = false;
   sendBtn.disabled = true;
   approveBtn.disabled = state.busy;
@@ -126,7 +127,7 @@ export function enterApprovalMode(payload) {
 export function exitApprovalMode() {
   state.approvalMode = false;
   if (!state.seatMode) seatBanner.hidden = true;
-  composerEl.classList.remove("approval-mode");
+  composerEl.classList.remove("is-approval-mode");
   approvalActionsEl.hidden = true;
   approveBtn.disabled = state.busy;
   rejectBtn.disabled = state.busy;

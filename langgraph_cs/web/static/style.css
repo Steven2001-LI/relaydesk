@@ -112,7 +112,7 @@ body {
 
 .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
 
-.brand-mark {
+.brand__mark {
   font-size: 15px;
   line-height: 1;
   padding: 7px 9px;
@@ -123,15 +123,15 @@ body {
   font-family: var(--font-mono);
 }
 
-.brand-text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
-.brand-name {
+.brand__text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.brand__name {
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 17px;
   letter-spacing: .3px;
   line-height: 1.2;
 }
-.brand-sub {
+.brand__sub {
   font-size: 12px;
   color: var(--ink-soft);
   white-space: nowrap;
@@ -139,11 +139,11 @@ body {
   text-overflow: ellipsis;
 }
 
-.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.topbar__actions { display: flex; align-items: center; gap: 8px; }
 
 /* 顶栏小部件统一高度 28px */
 .status,
-.identity-select-wrap,
+.identity,
 .identity-pill,
 .thread-pill,
 .btn-ghost {
@@ -163,7 +163,7 @@ body {
   border: 1px solid var(--line);
   border-radius: 999px;
 }
-.status-dot {
+.status__dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -171,9 +171,9 @@ body {
   box-shadow: 0 0 8px rgba(52, 229, 196, .7);
 }
 /* 推理中用蓝（用户触发的处理流向）；错误红；坐席橙 */
-.status.is-busy .status-dot { background: var(--blue); box-shadow: 0 0 8px rgba(109, 139, 255, .7); animation: pulse 1.1s ease-in-out infinite; }
-.status.is-error .status-dot { background: var(--danger); box-shadow: 0 0 8px rgba(255, 107, 107, .7); }
-.status.is-seat .status-dot { background: var(--seat); box-shadow: 0 0 8px rgba(255, 180, 84, .7); }
+.status.is-busy .status__dot { background: var(--blue); box-shadow: 0 0 8px rgba(109, 139, 255, .7); animation: pulse 1.1s ease-in-out infinite; }
+.status.is-error .status__dot { background: var(--danger); box-shadow: 0 0 8px rgba(255, 107, 107, .7); }
+.status.is-seat .status__dot { background: var(--seat); box-shadow: 0 0 8px rgba(255, 180, 84, .7); }
 
 @keyframes pulse { 50% { opacity: .35; } }
 
@@ -187,18 +187,18 @@ body {
   border-radius: 999px;
 }
 
-.identity-select-wrap {
+.identity {
   gap: 6px;
   background: var(--panel);
   border: 1px solid var(--line);
   padding: 0 8px;
   border-radius: 999px;
 }
-.identity-label {
+.identity__label {
   font-size: 11px;
   color: var(--ink-soft);
 }
-.identity-select {
+.identity__select {
   min-width: 92px;
   color: var(--ink);
   background: transparent;
@@ -207,7 +207,7 @@ body {
   font-family: var(--font-mono);
   font-size: 11px;
 }
-.identity-select option {
+.identity__select option {
   color: var(--ink-on-accent);
 }
 .identity-pill {
@@ -255,7 +255,7 @@ body {
 /* hidden 属性兜底：.seat-banner 的 display:flex 优先级高于 hidden 属性，
    需显式让 [hidden] 真正隐藏，否则系统条一打开就常驻显示。 */
 .seat-banner[hidden] { display: none; }
-.seat-banner-dot {
+.seat-banner__dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -307,18 +307,18 @@ body {
 /* 单条消息：气泡本身再收窄到 ~76%（在 800 列内更紧凑） */
 .msg { display: flex; flex-direction: column; max-width: 76%; }
 /* 开场气泡折叠：.msg 的 display:flex 优先级高于 [hidden]，需显式隐藏（P1-②）。 */
-.msg.welcome[hidden] { display: none; }
-.msg-user { align-self: flex-end; align-items: flex-end; }
-.msg-bot { align-self: flex-start; align-items: flex-start; }
+.msg.msg--welcome[hidden] { display: none; }
+.msg--user { align-self: flex-end; align-items: flex-end; }
+.msg--bot { align-self: flex-start; align-items: flex-start; }
 
-.bubble {
+.msg__bubble {
   padding: 11px 15px;
   border-radius: var(--radius-bubble);
   word-break: break-word;
   font-size: 14.5px;
 }
 
-.msg-bot .bubble {
+.msg--bot .msg__bubble {
   background: var(--panel);
   color: var(--ink);
   border: 1px solid var(--line);
@@ -326,7 +326,7 @@ body {
 }
 
 /* 用户气泡：蓝（PRD：蓝只用于用户消息 + 主按钮） */
-.msg-user .bubble {
+.msg--user .msg__bubble {
   background: linear-gradient(135deg, var(--blue), var(--blue-2));
   color: var(--ink-on-accent);
   font-weight: 500;
@@ -335,19 +335,19 @@ body {
 }
 
 /* 坐席发出的消息：琥珀描边，与普通机器人气泡区分 */
-.msg-bot.from-seat .bubble {
+.msg--bot.msg--from-seat .msg__bubble {
   background: var(--seat-bg);
   border: 1px solid var(--seat-line);
   border-top-left-radius: 4px;
 }
 
 /* markdown 轻量渲染产物的样式（在 bubble 内） */
-.bubble p { margin: 0 0 8px; }
-.bubble p:last-child { margin-bottom: 0; }
+.msg__bubble p { margin: 0 0 8px; }
+.msg__bubble p:last-child { margin-bottom: 0; }
 
 /* 标题：Space Grotesk、比正文略大、字重加强；上下留白克制，气泡内不喧宾夺主。
    颜色用主文字，并在左侧补一道青色细线点缀（青=AI），呼应「Agent 控制台」主题。 */
-.bubble .md-h {
+.msg__bubble .md-h {
   font-family: var(--font-display);
   font-weight: 600;
   line-height: 1.35;
@@ -356,43 +356,43 @@ body {
   padding-left: 8px;
   border-left: 2px solid var(--cyan);
 }
-.bubble .md-h:first-child { margin-top: 0; }
-.bubble .md-h1 { font-size: 1.28em; }
-.bubble .md-h2 { font-size: 1.18em; }
-.bubble .md-h3 { font-size: 1.08em; }
-.bubble .md-h4,
-.bubble .md-h5,
-.bubble .md-h6 {
+.msg__bubble .md-h:first-child { margin-top: 0; }
+.msg__bubble .md-h1 { font-size: 1.28em; }
+.msg__bubble .md-h2 { font-size: 1.18em; }
+.msg__bubble .md-h3 { font-size: 1.08em; }
+.msg__bubble .md-h4,
+.msg__bubble .md-h5,
+.msg__bubble .md-h6 {
   font-size: 1em;
   color: var(--cyan);
   border-left-color: var(--line-strong);
 }
 /* 坐席气泡里的标题点缀切琥珀，与坐席皮肤一致 */
-.msg-bot.from-seat .bubble .md-h { border-left-color: var(--seat); }
-.msg-bot.from-seat .bubble .md-h4,
-.msg-bot.from-seat .bubble .md-h5,
-.msg-bot.from-seat .bubble .md-h6 { color: var(--seat-soft); }
-.bubble ol, .bubble ul { margin: 6px 0; padding-left: 22px; }
-.bubble li { margin: 2px 0; }
+.msg--bot.msg--from-seat .msg__bubble .md-h { border-left-color: var(--seat); }
+.msg--bot.msg--from-seat .msg__bubble .md-h4,
+.msg--bot.msg--from-seat .msg__bubble .md-h5,
+.msg--bot.msg--from-seat .msg__bubble .md-h6 { color: var(--seat-soft); }
+.msg__bubble ol, .msg__bubble ul { margin: 6px 0; padding-left: 22px; }
+.msg__bubble li { margin: 2px 0; }
 /* P0-4 长回答步骤化：有序列表项之间留更大间距，像「一步一步」的步骤卡，便于扫读。
    依赖 <ol> 浏览器自动顺序编号（1.2.3.4.，不再每项都 1.）。 */
-.bubble ol { padding-left: 24px; }
-.bubble ol > li {
+.msg__bubble ol { padding-left: 24px; }
+.msg__bubble ol > li {
   margin: 10px 0;
   padding-left: 4px;
   line-height: 1.6;
 }
-.bubble ol > li:first-child { margin-top: 4px; }
-.bubble ol > li:last-child { margin-bottom: 2px; }
-.bubble ol > li::marker { color: var(--cyan); font-weight: 600; }
+.msg__bubble ol > li:first-child { margin-top: 4px; }
+.msg__bubble ol > li:last-child { margin-bottom: 2px; }
+.msg__bubble ol > li::marker { color: var(--cyan); font-weight: 600; }
 /* 项内「标题：说明」结构：标题加粗、说明用次要色弱化，一眼看出先做哪一步。 */
-.bubble li .li-title { font-weight: 600; color: var(--ink); }
-.bubble li .li-desc { color: var(--ink-soft); }
-.msg-bot.from-seat .bubble ol > li::marker { color: var(--seat); }
-.bubble strong { color: var(--cyan); font-weight: 600; }
-.msg-user .bubble strong { color: var(--ink-on-accent); }
-.msg-bot.from-seat .bubble strong { color: var(--seat); }
-.bubble code {
+.msg__bubble li .li-title { font-weight: 600; color: var(--ink); }
+.msg__bubble li .li-desc { color: var(--ink-soft); }
+.msg--bot.msg--from-seat .msg__bubble ol > li::marker { color: var(--seat); }
+.msg__bubble strong { color: var(--cyan); font-weight: 600; }
+.msg--user .msg__bubble strong { color: var(--ink-on-accent); }
+.msg--bot.msg--from-seat .msg__bubble strong { color: var(--seat); }
+.msg__bubble code {
   font-family: var(--font-mono);
   font-size: .88em;
   background: rgba(255, 255, 255, .07);
@@ -401,7 +401,7 @@ body {
 }
 
 /* 打字机光标（流式进行中显示，青=AI 当前应答） */
-.bubble.typing::after {
+.msg__bubble.is-typing::after {
   content: "▌";
   margin-left: 1px;
   color: var(--cyan);
@@ -411,7 +411,7 @@ body {
 
 /* ── 合并标签行（P0-3）：意图/路由/RAG 三段压成「一行点分隔」，比三个分离 chip 更干净。
    形如：技术支持 · 置信度 0.95 · 命中 3 条知识。整行可 hover 看技术原值（title）。── */
-.meta-line {
+.msg__meta {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -422,20 +422,20 @@ body {
   line-height: 1.5;
   color: var(--ink-soft);
 }
-.meta-line:empty { display: none; }
-.meta-seg { white-space: nowrap; }
-.meta-dot { color: var(--ink-faint); }
+.msg__meta:empty { display: none; }
+.msg__meta-seg { white-space: nowrap; }
+.msg__meta-dot { color: var(--ink-faint); }
 /* 坐席气泡的标签行切琥珀 */
-.msg-bot.from-seat .meta-line { color: var(--seat); }
+.msg--bot.msg--from-seat .msg__meta { color: var(--seat); }
 
 /* ── 气泡下方快捷操作条（P1-③：「重新提问」移到回答下方，更顺手） ── */
-.bubble-actions {
+.msg__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 6px;
 }
-.bubble-actions:empty { display: none; }
+.msg__actions:empty { display: none; }
 .btn-quick {
   font-family: var(--font-body);
   font-size: 11.5px;
@@ -454,14 +454,14 @@ body {
 }
 
 /* ── 错误气泡 ── */
-.msg-bot.is-error .bubble {
+.msg--bot.is-error .msg__bubble {
   background: var(--danger-bg);
   color: var(--danger-soft);
   border-color: var(--danger-line);
 }
 
 /* 坐席提示：消息流里的细长系统条（左对齐、低调，不居中不大块） */
-.sys-line {
+.messages__sys-line {
   align-self: stretch;
   display: flex;
   align-items: center;
@@ -473,7 +473,7 @@ body {
   background: var(--seat-bg);
   border-radius: 0 var(--radius-tag) var(--radius-tag) 0;
 }
-.sys-line::before {
+.messages__sys-line::before {
   content: "";
   width: 5px;
   height: 5px;
@@ -491,11 +491,11 @@ body {
   border-top: 1px solid var(--line);
   background: rgba(11, 16, 32, .5);
 }
-.composer-row { display: flex; align-items: flex-end; gap: 10px; }
+.composer__row { display: flex; align-items: flex-end; gap: 10px; }
 
 /* 输入框：默认暗色细边、彻底无常亮 glow/box-shadow（不抢视觉）；
    仅聚焦时 1px 青色细描边，无光晕。发光高亮交给发送按钮。 */
-.input {
+.composer__input {
   flex: 1;
   resize: none;
   max-height: 140px;
@@ -511,13 +511,13 @@ body {
   transition: border-color .15s;
 }
 /* 聚焦：1px 青色细描边，无光晕（不要 box-shadow） */
-.input:focus,
-.input:focus-visible {
+.composer__input:focus,
+.composer__input:focus-visible {
   border-color: var(--cyan);
   box-shadow: none;
   outline: none;
 }
-.input::placeholder { color: var(--ink-faint); }
+.composer__input::placeholder { color: var(--ink-faint); }
 
 /* 发送按钮：保留强视觉（蓝=主按钮） */
 .btn-send {
@@ -539,12 +539,12 @@ body {
 .btn-send:disabled { opacity: .45; cursor: not-allowed; filter: none; }
 
 /* 审批模式：输入框作为备注，按钮显式表达 resume 决定。 */
-.approval-actions {
+.composer__approval-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
 }
-.approval-actions[hidden] { display: none; }
+.composer__approval-actions[hidden] { display: none; }
 .btn-approval {
   min-width: 82px;
   height: 34px;
@@ -556,11 +556,11 @@ body {
   cursor: pointer;
   transition: opacity .15s, filter .15s, transform .12s, background .15s;
 }
-.btn-approve {
+.btn-approval--approve {
   color: var(--ink-on-accent);
   background: linear-gradient(135deg, var(--seat-2), var(--seat));
 }
-.btn-reject {
+.btn-approval--reject {
   color: var(--seat-soft);
   background: rgba(255, 180, 84, .08);
 }
@@ -574,16 +574,16 @@ body {
 }
 
 /* 坐席模式：输入区切琥珀皮肤（克制） */
-.composer.seat-mode { background: var(--seat-bg); border-top-color: var(--seat-line); }
-.composer.seat-mode .input { border-color: var(--seat-line); background: rgba(255, 180, 84, .06); }
-.composer.seat-mode .input:focus,
-.composer.seat-mode .input:focus-visible { border-color: var(--seat); }
-.composer.seat-mode .btn-send { background: linear-gradient(135deg, var(--seat-2), var(--seat)); }
+.composer.is-seat-mode { background: var(--seat-bg); border-top-color: var(--seat-line); }
+.composer.is-seat-mode .composer__input { border-color: var(--seat-line); background: rgba(255, 180, 84, .06); }
+.composer.is-seat-mode .composer__input:focus,
+.composer.is-seat-mode .composer__input:focus-visible { border-color: var(--seat); }
+.composer.is-seat-mode .btn-send { background: linear-gradient(135deg, var(--seat-2), var(--seat)); }
 
-.composer.approval-mode { background: var(--seat-bg); border-top-color: var(--seat-line); }
-.composer.approval-mode .input { border-color: var(--seat-line); background: rgba(255, 180, 84, .06); }
-.composer.approval-mode .input:focus,
-.composer.approval-mode .input:focus-visible { border-color: var(--seat); }
+.composer.is-approval-mode { background: var(--seat-bg); border-top-color: var(--seat-line); }
+.composer.is-approval-mode .composer__input { border-color: var(--seat-line); background: rgba(255, 180, 84, .06); }
+.composer.is-approval-mode .composer__input:focus,
+.composer.is-approval-mode .composer__input:focus-visible { border-color: var(--seat); }
 
 /* ════════════════════════════════════════════════════════════
    signature：决策轨迹 pipeline（右侧侧栏，调试面板化）
@@ -596,8 +596,8 @@ body {
   overflow-y: auto;
 }
 
-.pipeline-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
-.pipeline-title {
+.pipeline__head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
+.pipeline__title {
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 13px;
@@ -605,7 +605,7 @@ body {
   text-transform: uppercase;
   color: var(--ink-soft);
 }
-.pipeline-hint { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+.pipeline__hint { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
 
 .stages {
   list-style: none;
@@ -618,7 +618,7 @@ body {
 .stage { display: flex; gap: 13px; }
 
 /* 左侧"轨道"：节点圆 + 连接竖线 */
-.stage-rail {
+.stage__rail {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -626,7 +626,7 @@ body {
 }
 
 /* 默认（未开始）：最弱 —— 调试面板里弱化非当前步骤 */
-.stage-node {
+.stage__node {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -642,10 +642,10 @@ body {
   opacity: .55;
   transition: background .25s, border-color .25s, color .25s, box-shadow .25s, opacity .25s;
 }
-.stage-idx { line-height: 1; }
+.stage__idx { line-height: 1; }
 
 /* 连接线（最后一个节点无线） */
-.stage-line {
+.stage__line {
   flex: 1;
   width: 2px;
   min-height: 24px;
@@ -655,7 +655,7 @@ body {
   transition: background .35s;
 }
 
-.stage-body {
+.stage__body {
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -665,7 +665,7 @@ body {
   opacity: .55;
   transition: opacity .25s;
 }
-.stage-label {
+.stage__label {
   font-family: var(--font-display);
   font-size: 13px;
   font-weight: 500;
@@ -673,7 +673,7 @@ body {
   transition: color .25s;
 }
 /* 技术字段：小字、灰色、等宽 */
-.stage-value {
+.stage__value {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--ink-faint);
@@ -682,7 +682,7 @@ body {
 }
 
 /* ── 状态：active（当前步骤，高亮发光，青=当前/AI） ── */
-.stage.is-active .stage-node {
+.stage.is-active .stage__node {
   background: rgba(52, 229, 196, .14);
   border-color: var(--cyan);
   color: var(--cyan);
@@ -690,9 +690,9 @@ body {
   opacity: 1;
   animation: nodepulse 1.4s ease-in-out infinite;
 }
-.stage.is-active .stage-body { opacity: 1; }
-.stage.is-active .stage-label { color: var(--ink); }
-.stage.is-active .stage-value { color: var(--cyan); }
+.stage.is-active .stage__body { opacity: 1; }
+.stage.is-active .stage__label { color: var(--ink); }
+.stage.is-active .stage__value { color: var(--cyan); }
 
 @keyframes nodepulse {
   0%, 100% { box-shadow: 0 0 0 1px rgba(52, 229, 196, .5), 0 0 12px rgba(52, 229, 196, .22); }
@@ -700,59 +700,59 @@ body {
 }
 
 /* ── 状态：done（已完成，低亮度青稳态 + 打勾，成功=青） ── */
-.stage.is-done .stage-node {
+.stage.is-done .stage__node {
   background: rgba(52, 229, 196, .08);
   border-color: rgba(52, 229, 196, .4);
   color: var(--cyan-soft);
   opacity: .8;
 }
-.stage.is-done .stage-idx { display: none; }
-.stage.is-done .stage-node::after {
+.stage.is-done .stage__idx { display: none; }
+.stage.is-done .stage__node::after {
   content: "✓";
   font-size: 13px;
   color: var(--cyan);
 }
-.stage.is-done .stage-body { opacity: .75; }
-.stage.is-done .stage-label { color: var(--ink-soft); }
-.stage.is-done .stage-value { color: var(--ink-faint); }
+.stage.is-done .stage__body { opacity: .75; }
+.stage.is-done .stage__label { color: var(--ink-soft); }
+.stage.is-done .stage__value { color: var(--ink-faint); }
 /* 已完成阶段的下游连接线低亮充能（青） */
-.stage.is-done .stage-line {
+.stage.is-done .stage__line {
   background: rgba(52, 229, 196, .35);
 }
 
 /* ── 状态：skipped（本轮未使用，不等同于完成） ── */
-.stage.is-skipped .stage-node {
+.stage.is-skipped .stage__node {
   background: rgba(255, 255, 255, .03);
   border-color: var(--line);
   color: var(--ink-faint);
   opacity: .45;
   box-shadow: none;
 }
-.stage.is-skipped .stage-idx { display: none; }
-.stage.is-skipped .stage-node::after {
+.stage.is-skipped .stage__idx { display: none; }
+.stage.is-skipped .stage__node::after {
   content: "–";
   font-size: 15px;
   color: var(--ink-faint);
 }
-.stage.is-skipped .stage-body { opacity: .55; }
-.stage.is-skipped .stage-label,
-.stage.is-skipped .stage-value { color: var(--ink-faint); }
-.stage.is-skipped .stage-line { background: var(--line); }
+.stage.is-skipped .stage__body { opacity: .55; }
+.stage.is-skipped .stage__label,
+.stage.is-skipped .stage__value { color: var(--ink-faint); }
+.stage.is-skipped .stage__line { background: var(--line); }
 
 /* ── 状态：seat（转人工，琥珀醒目） ── */
-.stage.is-seat .stage-node {
+.stage.is-seat .stage__node {
   background: var(--seat-bg);
   border-color: var(--seat);
   color: var(--seat);
   box-shadow: var(--glow-seat);
   opacity: 1;
 }
-.stage.is-seat .stage-idx { display: none; }
-.stage.is-seat .stage-node::after { content: "🧑‍💼"; font-size: 12px; }
-.stage.is-seat .stage-body { opacity: 1; }
-.stage.is-seat .stage-label { color: var(--seat-soft); }
-.stage.is-seat .stage-value { color: var(--seat); }
-.stage.is-seat .stage-line { background: var(--seat); }
+.stage.is-seat .stage__idx { display: none; }
+.stage.is-seat .stage__node::after { content: "🧑‍💼"; font-size: 12px; }
+.stage.is-seat .stage__body { opacity: 1; }
+.stage.is-seat .stage__label { color: var(--seat-soft); }
+.stage.is-seat .stage__value { color: var(--seat); }
+.stage.is-seat .stage__line { background: var(--seat); }
 
 /* ── 转人工三段状态卡（调试面板内，命中后显示） ── */
 .seat-flow {
@@ -764,7 +764,7 @@ body {
   animation: slidedown .2s ease;
 }
 .seat-flow[hidden] { display: none; }
-.seat-flow-title {
+.seat-flow__title {
   font-family: var(--font-display);
   font-size: 12px;
   font-weight: 600;
@@ -784,18 +784,18 @@ body {
   transition: opacity .25s, border-color .25s;
 }
 .seat-step.is-on { opacity: 1; border-left-color: var(--seat); }
-.seat-step-tag {
+.seat-step__tag {
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: .3px;
   text-transform: uppercase;
   color: var(--ink-faint);
 }
-.seat-step.is-on .seat-step-tag { color: var(--seat); }
-.seat-step-text { font-size: 12.5px; color: var(--ink-soft); word-break: break-word; }
-.seat-step.is-on .seat-step-text { color: var(--ink); }
+.seat-step.is-on .seat-step__tag { color: var(--seat); }
+.seat-step__text { font-size: 12.5px; color: var(--ink-soft); word-break: break-word; }
+.seat-step.is-on .seat-step__text { color: var(--ink); }
 
-.pipeline-foot {
+.pipeline__foot {
   margin: auto 0 0;
   padding-top: 16px;
   font-family: var(--font-mono);
@@ -803,7 +803,7 @@ body {
   color: var(--ink-faint);
   line-height: 1.7;
 }
-.pipeline-foot code {
+.pipeline__foot code {
   color: var(--ink-soft);
   background: var(--panel-2);
   padding: 1px 5px;
@@ -845,24 +845,24 @@ body {
     padding: 14px 16px;
     overflow-x: auto;
   }
-  .pipeline-head { flex-direction: row; align-items: baseline; gap: 10px; margin-bottom: 12px; }
-  .pipeline-foot { display: none; }
+  .pipeline__head { flex-direction: row; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+  .pipeline__foot { display: none; }
   .seat-flow { margin-top: 12px; }
 
   .stages { flex-direction: row; gap: 4px; }
   .stage { flex: 1; flex-direction: column; align-items: stretch; min-width: 112px; gap: 8px; }
-  .stage-rail { flex-direction: row; align-items: center; width: 100%; }
-  .stage-line { width: auto; height: 2px; min-height: 0; min-width: 12px; margin: 0 6px; }
-  .stage.is-done .stage-line { background: rgba(52, 229, 196, .35); }
-  .stage.is-skipped .stage-line { background: var(--line); }
-  .stage-body { padding-bottom: 0; padding-top: 0; }
+  .stage__rail { flex-direction: row; align-items: center; width: 100%; }
+  .stage__line { width: auto; height: 2px; min-height: 0; min-width: 12px; margin: 0 6px; }
+  .stage.is-done .stage__line { background: rgba(52, 229, 196, .35); }
+  .stage.is-skipped .stage__line { background: var(--line); }
+  .stage__body { padding-bottom: 0; padding-top: 0; }
 
   .chat { border-right: none; }
   .msg { max-width: 90%; }
 }
 
 @media (max-width: 560px) {
-  .brand-sub { display: none; }
+  .brand__sub { display: none; }
   .thread-pill { display: none; }
 }
 
@@ -871,7 +871,7 @@ body {
   * { scroll-behavior: auto !important; }
   .messages { scroll-behavior: auto; }
   .seat-banner, .seat-flow { animation: none; }
-  .bubble.typing::after { animation: none; }
-  .status.is-busy .status-dot { animation: none; }
-  .stage.is-active .stage-node { animation: none; box-shadow: var(--glow-cyan); }
+  .msg__bubble.is-typing::after { animation: none; }
+  .status.is-busy .status__dot { animation: none; }
+  .stage.is-active .stage__node { animation: none; box-shadow: var(--glow-cyan); }
 }
