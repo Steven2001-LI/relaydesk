@@ -36,8 +36,9 @@ import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langgraph.types import Command
 
@@ -46,8 +47,22 @@ from langgraph_cs.graph import build_graph
 
 logger = logging.getLogger(__name__)
 
-# 静态资源目录（index.html / app.js / style.css 都在这里）。
+# 静态资源目录（app.js / style.css / js/ 都在这里）。
 _STATIC_DIR = Path(__file__).parent / "static"
+# 模板目录（index.html 在这里，用 Jinja2 循环渲染决策轨迹 5 个 stage）。
+_TEMPLATES_DIR = Path(__file__).parent / "templates"
+_templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+# 决策轨迹 5 个 stage 的展示数据，供 index.html 模板循环渲染。
+# ⚠️ key 的顺序和取值必须和 js/pipeline.js 里的 STAGE_ORDER 完全一致，
+#    两处各自独立声明，改一处记得改另一处。
+_STAGES = [
+    {"key": "intent", "idx": 1, "label": "意图识别"},
+    {"key": "rag", "idx": 2, "label": "知识库检索"},
+    {"key": "route", "idx": 3, "label": "路由分发"},
+    {"key": "tool", "idx": 4, "label": "业务工具"},
+    {"key": "answer", "idx": 5, "label": "生成应答"},
+]
 
 # 哪些节点产出的 token 算"机器人正文"，需要做打字机。
 # 四个专职 Agent + escalation（坐席回复也作为机器人消息显示）。
@@ -387,9 +402,9 @@ def build_app() -> FastAPI:
     app = FastAPI(title="RelayDesk LangGraph 客服 Web 演示", docs_url=None, redoc_url=None)
 
     @app.get("/")
-    def index():
+    def index(request: Request):
         """返回聊天主页面。"""
-        return FileResponse(_STATIC_DIR / "index.html")
+        return _templates.TemplateResponse(request, "index.html", {"stages": _STAGES})
 
     @app.post("/api/chat")
     async def chat(request: Request):

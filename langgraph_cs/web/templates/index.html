@@ -110,64 +110,18 @@
         </div>
 
         <ol class="stages" id="stages">
-          <!-- ① 意图识别 -->
-          <li class="stage" data-stage="intent" id="stage-intent">
+          {% for stage in stages %}
+          <li class="stage" data-stage="{{ stage.key }}" id="stage-{{ stage.key }}">
             <div class="stage__rail" aria-hidden="true">
-              <span class="stage__node"><span class="stage__idx">1</span></span>
-              <span class="stage__line"></span>
+              <span class="stage__node"><span class="stage__idx">{{ stage.idx }}</span></span>
+              {% if not loop.last %}<span class="stage__line"></span>{% endif %}
             </div>
             <div class="stage__body">
-              <span class="stage__label">意图识别</span>
-              <span class="stage__value" id="value-intent">待命</span>
+              <span class="stage__label">{{ stage.label }}</span>
+              <span class="stage__value" id="value-{{ stage.key }}">待命</span>
             </div>
           </li>
-
-          <!-- ② 知识检索 -->
-          <li class="stage" data-stage="rag" id="stage-rag">
-            <div class="stage__rail" aria-hidden="true">
-              <span class="stage__node"><span class="stage__idx">2</span></span>
-              <span class="stage__line"></span>
-            </div>
-            <div class="stage__body">
-              <span class="stage__label">知识库检索</span>
-              <span class="stage__value" id="value-rag">待命</span>
-            </div>
-          </li>
-
-          <!-- ③ 路由 -->
-          <li class="stage" data-stage="route" id="stage-route">
-            <div class="stage__rail" aria-hidden="true">
-              <span class="stage__node"><span class="stage__idx">3</span></span>
-              <span class="stage__line"></span>
-            </div>
-            <div class="stage__body">
-              <span class="stage__label">路由分发</span>
-              <span class="stage__value" id="value-route">待命</span>
-            </div>
-          </li>
-
-          <!-- ④ 业务工具 -->
-          <li class="stage" data-stage="tool" id="stage-tool">
-            <div class="stage__rail" aria-hidden="true">
-              <span class="stage__node"><span class="stage__idx">4</span></span>
-              <span class="stage__line"></span>
-            </div>
-            <div class="stage__body">
-              <span class="stage__label">业务工具</span>
-              <span class="stage__value" id="value-tool">待命</span>
-            </div>
-          </li>
-
-          <!-- ⑤ 应答 -->
-          <li class="stage" data-stage="answer" id="stage-answer">
-            <div class="stage__rail" aria-hidden="true">
-              <span class="stage__node"><span class="stage__idx">5</span></span>
-            </div>
-            <div class="stage__body">
-              <span class="stage__label">生成应答</span>
-              <span class="stage__value" id="value-answer">待命</span>
-            </div>
-          </li>
+          {% endfor %}
         </ol>
 
         <!-- 转人工三段状态（默认隐藏，命中 interrupt / resume 时分段显示）。
