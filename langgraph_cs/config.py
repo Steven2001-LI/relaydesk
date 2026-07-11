@@ -18,7 +18,7 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
-# ── 阶段 4：LangSmith 可观测/评测相关环境变量 ──────────────────────────────
+# ── LangSmith 可观测/评测相关环境变量 ──────────────────────────────
 # 只是从 .env 读出来（load_dotenv 已加载），不在这里做任何联网。
 # 关键点：LANGSMITH_TRACING / LANGSMITH_API_KEY / LANGSMITH_PROJECT 这三个变量
 # 一旦设进进程环境，**LangGraph/LangChain 会自动**把每次 invoke 的节点级 trace 上传到
