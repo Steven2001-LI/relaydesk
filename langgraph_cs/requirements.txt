@@ -1,23 +1,21 @@
-# langgraph_cs —— 阶段 2 骨架依赖
+# 编排核心
 langgraph>=0.2.40
 langchain-openai>=0.2.0
 langchain-core>=0.3.0
 python-dotenv>=1.0.1
 
-# 阶段 3 RAG（PR1 检索地基）依赖
+# RAG 检索与重排
 langchain-chroma>=0.1.4        # 向量库 Chroma 的 LangChain 封装（本地持久化）
 langchain-text-splitters>=0.3.0  # LangChain 切块件（本项目改为按 ### 条目精确切块，未直接使用，保留以备扩展）
 httpx>=0.27.0                  # 调硅基流动自有 /rerank 接口
-
-# 阶段 3 RAG（弱检索器 BM25 对照）依赖
 rank-bm25>=0.2.2              # BM25Okapi 词法/稀疏检索，作为 rerank 价值对照的弱一阶段检索器
 jieba>=0.42.1                # 中文分词（BM25 按词项匹配，中文需先分词）
 
-# 阶段 4：持久化 + 可观测/评测依赖
+# 持久化与评测
 langgraph-checkpoint-sqlite>=3.1.0  # SqliteSaver：把 LangGraph 检查点持久化到本地 SQLite（重启仍记得上文）
 langsmith>=0.9.0                    # LangSmith SDK：节点级 trace + 数据集 + evaluate 端到端评测
 
-# 阶段 5：Web 演示界面（web/ 适配层）依赖
+# Web 演示
 fastapi>=0.115.0          # 把 build_graph() 暴露成 HTTP 接口 + 提供静态聊天页
 uvicorn[standard]>=0.30.0  # ASGI 服务器（python -m langgraph_cs.web 启动）
 jinja2>=3.1.0              # index.html 决策轨迹 5-stage 循环渲染，避免手写复制
