@@ -68,7 +68,7 @@ def test_read_approval_resume_eof_rejects():
 
 def test_interrupt_payload_defaults():
     """kind 缺省 seat；显式 None 字段回落默认；params 非 dict 归 {}。"""
-    # 旧版转人工 payload（无 kind）
+    # 无 kind 的转人工 payload（兼容旧格式）
     legacy = {"__interrupt__": [_FakeInterrupt({"prompt": "请回复", "user_message": "你好"})]}
     out = main_mod._interrupt_payload(legacy)
     assert out["kind"] == "seat" and out["prompt"] == "请回复", out
