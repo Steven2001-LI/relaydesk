@@ -397,7 +397,7 @@ def write_results_md(
     naive: dict, reranked: dict, recovered: dict, sweep: list[dict],
 ) -> None:
     """
-    把对比结果（含 sweep 表与 recovered 数）落一份 Markdown，方便贴进 README / 简历。
+    把对比结果（含 sweep 表与 recovered 数）落一份 Markdown，方便贴进 README。
 
     支持 dense 与 bm25 两个 stage1 各占一节：本次只更新「当前 stage1」这一节与顶部汇总表里
     它对应的那一行，**不覆盖另一个 stage1** 已有的结果（用 marker 圈定、就地替换/追加）。
