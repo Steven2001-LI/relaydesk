@@ -30,9 +30,17 @@ docs/improvement-plan.md
 # 给编码 agent 的任务书（系列），本地留底，不公开
 docs/codex-task*.md
 
+# superpowers 脚手架产物（brainstorm mockup 草稿、SDD 进度台账等，本地临时文件）
+.superpowers/
+
 # OS / IDE
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
 *.swp
+docs/superpowers/
+reviews/
+
+# 本机 Claude Code 配置与 worktree（settings.local.json、worktrees/ 等，不共享）
+.claude/
