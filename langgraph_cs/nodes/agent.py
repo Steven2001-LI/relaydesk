@@ -1,18 +1,16 @@
 """
-应答节点（阶段 3：多 Agent 条件路由 + 失败降级）。
+应答节点：多 Agent 条件路由 + 失败降级。
 
-阶段 1/2 是"一个 agent_node + 按 intent 换 system prompt"。
-阶段 3 拆成多个**专职 Agent 节点**——technical / billing / general——再由 graph.py 用
-`add_conditional_edges` 按意图路由到对应节点。对照旧版手写的 agents/agent_orchestrator.py：
-那里有 GeneralAgent / TechnicalAgent / BillingAgent 多个 Agent 类 + Orchestrator 做路由/降级；
-这里用 LangGraph 原生的"多节点 + 条件边"表达同一套思路。
+专职 Agent 节点 technical / billing / general 各自独立，由 graph.py 的
+`add_conditional_edges` 按意图路由到对应节点。另一种实现是手写 Orchestrator
+统管多个 Agent 类做路由/降级；这里用 LangGraph 原生的"多节点 + 条件边"表达同一套思路。
 
-三个教学点：
+三个设计要点：
   1) 复用：所有专职节点共享 _run_agent()（构造消息 + 调 LLM + 兜底），
-     只是各自传入不同的 system prompt，避免复制粘贴 agent_node 的逻辑（见 code-reuse 指南）。
-  2) RAG 上下文：每个专职节点都保留 _build_rag_context 行为，带上 rag 检索到的文档。
-  3) 降级：节点内部对 LLM 调用做 try/except，单个 Agent 报错不让整图崩，返回兜底消息。
-     （另一层"低置信度降级到 general"在 graph.py 的路由函数里做。）
+     各自只传不同的 system prompt，不复制节点逻辑。
+  2) RAG 上下文：每个专职节点都经 _build_rag_context 带上 rag 检索到的文档。
+  3) 降级：节点内部对 LLM 调用做 try/except，单个 Agent 报错不崩整图，返回兜底消息
+     （另一层"低置信度降级到 general"在 graph.py 的路由函数里做）。
 
 节点契约（所有专职节点统一）：
   输入：state（读 intent / messages / retrieved_docs）
@@ -27,8 +25,7 @@ from langgraph_cs.nodes.tools import BILLING_TOOLS, TECHNICAL_TOOLS
 
 logger = logging.getLogger(__name__)
 
-# 意图 -> system prompt 的映射（对照旧版各 Agent 的 system_prompt）。
-# 这些 prompt 沿用阶段 1/2 的写法，现在被各专职节点按需取用。
+# 意图 -> system prompt 的映射，被各专职节点按需取用。
 _PROMPTS = {
     "technical": (
         "你是技术支持专家。专注故障排查、错误诊断、配置问题，给出清晰的分步解决方案。\n"
@@ -98,7 +95,7 @@ def _run_agent(state, system_prompt: str, agent_name: str, tools=None) -> dict:
     try:
         runnable = llm.bind_tools(tools) if tools else llm
         resp = runnable.invoke(messages)
-    except Exception as ex:  # noqa: BLE001 教学版统一兜底：单个 Agent 失败 -> 降级回复，不崩图
+    except Exception as ex:  # noqa: BLE001 统一兜底：单个 Agent 失败即降级回复，不崩图
         logger.warning("%s 调用 LLM 失败，返回兜底回复：%s", agent_name, ex)
         return {"messages": [AIMessage(content=_FALLBACK_REPLY)]}
 
@@ -107,7 +104,7 @@ def _run_agent(state, system_prompt: str, agent_name: str, tools=None) -> dict:
     return {"messages": [resp if isinstance(resp, AIMessage) else AIMessage(content=resp.content)]}
 
 
-# ---- 专职 Agent 节点（对照旧版 TechnicalAgent / BillingAgent / GeneralAgent）----
+# ---- 专职 Agent 节点 ----
 
 def technical_agent(state) -> dict:
     """技术支持 Agent：故障排查、错误诊断、配置问题。"""
