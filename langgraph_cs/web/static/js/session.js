@@ -1,7 +1,7 @@
 // session.js —— thread_id / session_user_id 持久化 + 共享会话状态 state + 身份/会话 pill 渲染。
 import { threadPill, identityPill } from "./dom.js";
 
-// localStorage 里存 thread_id 的 key（新 key + 旧版兼容 key）。
+// localStorage 里存 thread_id 的 key（当前 key + 兼容历史 key）。
 // ⚠️ 必须声明在下面 state 初始化之前：state 初始化会调用 loadThreadId()，
 //    它引用这两个 const；若声明挪到 state 初始化之后，会触发 const 暂时性死区(TDZ)
 //    的 ReferenceError，导致整个模块在此中断、所有事件绑定都不执行
