@@ -247,7 +247,7 @@ def _stream_graph(graph_input, config):
     chat 与 resume 共用它 —— 唯一区别是 graph_input：
       - chat   传 {"messages": [HumanMessage(...)]}
       - resume 传 Command(resume=<坐席回复或审批结果>)
-    两者之后的事件协议完全一致（route/token/interrupt/done），所以抽成一份（见 code-reuse 指南）。
+    两者之后的事件协议完全一致（route/token/interrupt/done），所以抽成一份。
 
     事件协议（每条都是 `data: {"type": ...}\n\n`）：
       meta      {intent, confidence}           —— intent 节点后
