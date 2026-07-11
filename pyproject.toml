@@ -15,22 +15,21 @@ keywords = ["langgraph", "rag", "customer-service", "multi-agent", "deepseek"]
 # 依赖镜像 langgraph_cs/requirements.txt 的版本下限（保持单一事实来源：改一处时两处同步）。
 # 精确锁定版本见仓库根 requirements.lock（pip freeze 产物，可复现安装环境）。
 dependencies = [
-    # 阶段 2 骨架
+    # 编排核心
     "langgraph>=0.2.40",
     "langchain-openai>=0.2.0",
     "langchain-core>=0.3.0",
     "python-dotenv>=1.0.1",
-    # 阶段 3 RAG（检索地基）
+    # RAG 检索与重排
     "langchain-chroma>=0.1.4",
     "langchain-text-splitters>=0.3.0",
     "httpx>=0.27.0",
-    # 阶段 3 RAG（BM25 弱检索器对照）
     "rank-bm25>=0.2.2",
     "jieba>=0.42.1",
-    # 阶段 4 持久化 + 可观测/评测
+    # 持久化与评测
     "langgraph-checkpoint-sqlite>=3.1.0",
     "langsmith>=0.9.0",
-    # 阶段 5 Web 演示
+    # Web 演示
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
 ]
