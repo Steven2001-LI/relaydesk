@@ -5,7 +5,7 @@ store —— 向量库（Chroma）的灌库与检索器构造。
          → 写入本地持久化 Chroma → build_retriever() 暴露一个 top-k 检索器供 rag_node 使用。
 
 为什么按"条目"切，而不是用 RecursiveCharacterTextSplitter 粗切？
-  旧版按 400 字滑窗粗切，一个 FAQ 答案可能被拦腰截成两块，也可能把两条不相关的
+  若按 400 字滑窗粗切，一个 FAQ 答案可能被拦腰截成两块，也可能把两条不相关的
   FAQ 黏在同一块里 —— 检索命中后既难溯源到"是哪一条 FAQ"，rerank 的语义边界也很糊。
   本项目的 FAQ 是结构化写的：每条就是"一行三级标题 + 一段答案"，天然就是最佳的检索粒度。
   所以这里自己写解析：每个 "### [<id>] <title>" 条目精确切成一个 chunk，
@@ -15,7 +15,7 @@ store —— 向量库（Chroma）的灌库与检索器构造。
   按条目切天然不会超长，不必再担心截断。
 
 为什么持久目录单独放 langgraph_cs/data/chroma_rag/？
-  避免污染其他项目或旧版实验的 data/chroma（可能是另一套 collection 与 embedding）。
+  与本机其他实验可能使用的 data/chroma 隔离（那里可能是另一套 collection 与 embedding）。
   本目录是 RelayDesk 自己的库，互不干扰。
 """
 import logging
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # 本模块所在的 langgraph_cs/ 目录。
 _BASE_DIR = Path(__file__).parent.parent
 
-# Chroma 持久化目录（单独一份，不碰其他项目或旧版实验的 data/chroma）。
+# Chroma 持久化目录（单独一份，与其他实验的 data/chroma 隔离）。
 PERSIST_DIR = _BASE_DIR / "data" / "chroma_rag"
 # 默认的 FAQ 数据目录。
 DEFAULT_DOCS_DIR = _BASE_DIR / "data" / "faq"
@@ -92,7 +92,7 @@ def _parse_faq_file(fp: Path) -> list[Document]:
             line = raw_line.strip()
             if line:
                 cur_body.append(line)
-    # 文件结束，别忘了收尾最后一条。
+    # 文件结束，收尾最后一个条目。
     _flush()
     return docs
 
@@ -102,8 +102,8 @@ def load_faq_documents(docs_dir: Path | str = DEFAULT_DOCS_DIR) -> list[Document
     读取 docs_dir 下所有 .md 文件，按"每个 ### 条目 = 一个 chunk"精确切块。
 
     这是**唯一**的 FAQ 解析入口，向量库（store.ingest）与词法库（bm25.build_bm25_retriever）
-    都复用它，保证两条检索链路吃的是**完全相同的 121 个条目 chunk**（同样的 page_content
-    与 metadata），评测对比才公平（遵循 code-reuse：解析逻辑只此一份，绝不复制）。
+    都复用它，保证两条检索链路吃的是**完全相同的条目 chunk 集合**（同样的 page_content
+    与 metadata，条目总数以 ingest 日志为准），评测对比才公平；解析逻辑只此一份，绝不复制。
 
     每个 chunk 带上 metadata={"source": 文件名, "item_id": "<domain>-<NN>"}：
       - source 用于按文件溯源；
@@ -127,7 +127,7 @@ def load_faq_documents(docs_dir: Path | str = DEFAULT_DOCS_DIR) -> list[Document
 
 def _reset_collection() -> None:
     """
-    重建前先清掉旧 collection，避免与上一版（粗切的 10 块）混在一起。
+    重建前先清掉旧 collection，避免新旧数据混在一起、产生重复条目。
 
     用 Chroma 客户端按名删除 collection；collection 不存在时静默忽略。
     只删本项目这一个 collection，不动 PERSIST_DIR 下别的东西。
@@ -183,7 +183,7 @@ def build_retriever(k: int = 5):
     参数 k：向量检索返回的候选数。做 rerank 实验时通常先取较大的 k（如 20）
             作为粗排候选，再用 rerank 精排截 top-n。
 
-    用法（PR2 的 rag_node）：
+    用法（rag_node）：
       retriever = build_retriever(k=20)
       hits = retriever.invoke("用户问题")   # -> List[Document]，每个 doc 的
                                             # metadata 含 source 与 item_id
