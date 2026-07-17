@@ -8,14 +8,14 @@
 因为编译时挂了 checkpointer，同一个 thread_id 下的多轮对话会自动记得上文，
 你可以试着先说"我叫小明"，下一句问"我叫什么"，看它是否记得。
 
-阶段 4 新增：持久化后端可切换（环境变量 CS_CHECKPOINT）。
+持久化后端可切换（环境变量 CS_CHECKPOINT）。
     CS_CHECKPOINT=memory（默认）：内存版，进程退出即丢。
     CS_CHECKPOINT=sqlite     ：落 data/checkpoints.sqlite，**进程重启后仍记得上文**。
         体验跨进程记忆：先 `CS_CHECKPOINT=sqlite python -m langgraph_cs.main` 说"我叫小明"，
         退出后再起一次同样命令、用同一句问"我叫什么"，它仍记得 —— 状态来自 SQLite 文件。
 具体选哪个由 build_graph()->make_checkpointer() 按 CS_CHECKPOINT 决定，本文件不必区分。
 
-阶段 3 新增：human-in-the-loop。
+human-in-the-loop：
 当意图是 escalation（用户要求转人工）时，图会停在 escalation 节点的 interrupt() 处，
 invoke 的返回结果里会带 "__interrupt__"。这里检测到后，提示并读取"人工坐席"的输入，
 再用 graph.invoke(Command(resume=<人工输入>)) 恢复，图把这段人工回复作为最终回复继续到 END。
@@ -41,7 +41,7 @@ def _is_interrupted(result) -> bool:
 
 
 def _interrupt_payload(result) -> dict:
-    """从中断结果里取出 payload；缺 kind 时按旧版转人工 seat 兼容。"""
+    """从中断结果里取出 payload；缺 kind 时按早期无 kind 的 seat 载荷格式兼容处理。"""
     interrupts = result.get("__interrupt__") or []
     if interrupts:
         value = interrupts[0].value
