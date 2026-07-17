@@ -22,7 +22,7 @@ class CSState(TypedDict):
     # 意图识别结果（intent_node 写入，agent_node 读取用来选 system prompt）。
     intent: Optional[str]
 
-    # 意图置信度（0~1）。教学版先放着，阶段 3 做"低置信度转人工"时会用到。
+    # 意图置信度（0~1）。路由函数用它做低置信度降级判断（见 nodes/router.py 的阈值）。
     confidence: Optional[float]
 
     # RAG 检索到的**结构化**参考条目列表（rag_node 写入，agent_node 读取拼进上下文）。
@@ -35,5 +35,5 @@ class CSState(TypedDict):
     retrieved_docs: list
 
     # 是否走了"转人工"（human-in-the-loop）。escalation_node 在拿到人工回复后置 True，
-    # 方便外层（CLI / 评测）观测本轮是否经过人工介入。阶段 3 新增，默认 None/缺省即未转人工。
+    # 方便外层（CLI / 评测）观测本轮是否经过人工介入。默认 None/缺省即未转人工。
     escalated: Optional[bool]

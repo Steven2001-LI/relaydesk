@@ -1,12 +1,12 @@
 """
 组装并编译 LangGraph 图。
 
-图的形态（阶段 3：多 Agent 条件路由 + human-in-the-loop）：
+图的形态（多 Agent 条件路由 + human-in-the-loop）：
 
     START -> intent -> rag -(条件路由 route_by_intent)-> 专职 Agent 节点 -> END
                                                └─ 有 tool_calls -> tools -> 回到发起 Agent
 
-  rag 之后不再固定直连一个 agent，而是用 add_conditional_edges 按意图分流：
+  rag 之后不固定直连某个 agent，而是用 add_conditional_edges 按意图分流：
       technical  -> technical_agent
       billing    -> billing_agent
       escalation -> escalation        （interrupt 暂停等人工）
@@ -17,17 +17,14 @@
   - add_node：把函数注册为节点
   - add_edge：固定直连（START->intent->rag，以及各专职节点->END）
   - add_conditional_edges(源节点, 路由函数, {返回值: 目标节点}):
-        阶段 3 用它替代阶段 1/2 的 rag->agent 直连，实现意图路由 + 低置信度降级。
-        路由函数（route_by_intent）返回下一个节点名，必须落在映射的 value 集合里。
-        —— 这一整套就对应旧版手写 agent_orchestrator.py 里的"意图路由 + 降级路由"。
+        意图路由 + 低置信度降级都由它表达；路由函数（route_by_intent）返回
+        下一个节点名，必须落在映射的 value 集合里。
   - compile(checkpointer=...)：挂"检查点存储"，让图能按 thread_id 记住每轮状态。
-        阶段 3 的 human-in-the-loop（escalation 节点 interrupt/resume）也**依赖**它：
+        human-in-the-loop（escalation 节点 interrupt/resume）也**依赖**它：
         没有 checkpointer 就无法保存中断点、无法 Command(resume=...) 恢复。
 
-阶段 4 改动：checkpointer 从硬编码 MemorySaver 改为可切换工厂 make_checkpointer()，
-按环境变量 CS_CHECKPOINT=memory|sqlite 选择内存版或 SQLite 持久版（落本地文件，
-进程重启后同一 thread_id 仍记得上文）。build_graph() 也允许外部传入自定义 checkpointer，
-方便评测/测试注入，且默认行为（不传 = 走工厂）不破坏阶段 1/2/3。
+checkpointer 由 make_checkpointer() 工厂按环境变量 CS_CHECKPOINT=memory|sqlite 选择；
+build_graph() 支持外部注入自定义实例（供评测/测试隔离），不传则走工厂默认。
 """
 import os
 import sqlite3
@@ -79,7 +76,6 @@ def make_checkpointer():
     按环境变量 CS_CHECKPOINT 选择检查点存储（工厂方法）。
 
       - CS_CHECKPOINT=memory（默认）：MemorySaver，进程内存版，零依赖、重启即丢。
-        与阶段 1/2/3 行为完全一致。
       - CS_CHECKPOINT=sqlite：SqliteSaver，落 data/checkpoints.sqlite，进程重启后
         同一 thread_id 仍记得上文（见 scripts/verify_persistence.py 的跨进程验证）。
 
@@ -113,7 +109,7 @@ def build_graph(checkpointer=None):
     builder.add_node("intent", intent_node)
     builder.add_node("rag", rag_node)
 
-    # 阶段 3：四个专职 Agent 节点（对照旧版手写多 Agent）。
+    # 四个专职 Agent 节点。
     builder.add_node("technical_agent", technical_agent)
     builder.add_node("billing_agent", billing_agent)
     builder.add_node("general_agent", general_agent)
@@ -125,7 +121,7 @@ def build_graph(checkpointer=None):
     builder.add_edge(START, "intent")
     builder.add_edge("intent", "rag")
 
-    # 核心改动：rag 之后按意图条件路由（含低置信度降级到 general_agent）。
+    # rag 之后按意图条件路由（含低置信度降级到 general_agent）。
     # 第三个参数是"路由函数返回值 -> 目标节点"的映射；这里 key 和 value 同名，
     # 直接表达 route_by_intent 可能返回的四个节点。
     builder.add_conditional_edges(

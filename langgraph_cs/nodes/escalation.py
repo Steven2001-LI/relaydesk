@@ -1,22 +1,22 @@
 """
-escalation_node —— 转人工节点（human-in-the-loop，阶段 3 重点）。
+escalation_node —— 转人工节点（human-in-the-loop）。
 
-当意图被识别为 escalation（用户要求人工坐席 / 专职 Agent 无法处理）时，
+当意图被识别为 escalation（用户明确要求人工坐席）时，
 路由函数把请求送到这里。本节点不调 LLM，而是用 LangGraph 原生的 `interrupt()`
 **暂停整张图**，把"请人工坐席输入回复"的提示抛给外层（CLI / 评测）。
 外层拿到人工输入后，用 `graph.invoke(Command(resume=<人工输入>))` 恢复，
 `interrupt()` 的返回值就是那段人工输入，本节点再把它作为 AIMessage 写回 messages。
 
-对照旧版手写 Orchestrator：agent_orchestrator.py 里 _needs_escalation 检测关键词后把 escalated 置位
-（占位，并未真正阻塞等人工）。这里用 interrupt 做到了**真正暂停 + 等人工 + 恢复**的闭环。
+另一种常见做法是只置一个 escalated 标志位、并不真正阻塞等待人工；
+这里用 interrupt 做到**真正暂停 + 等人工 + 恢复**的闭环。
 
 为什么把 interrupt 放在最前、且不依赖 LLM？
   - 体验上：转人工就该立即停下等人，不必再花一次 LLM 调用。
   - 工程上：interrupt 在前 + 无 LLM，使本节点可在不联网、无 API key 的情况下离线验证
     （图能暂停、能用 Command(resume=...) 恢复、人工输入被写回 messages）。
 
-依赖：编译图时必须挂 checkpointer（我们用 MemorySaver）+ 传 thread_id，
-否则 interrupt 无法保存/恢复中断点。
+依赖：编译图时必须挂 checkpointer（make_checkpointer 按 CS_CHECKPOINT 提供
+memory / sqlite 两种）+ 传 thread_id，否则 interrupt 无法保存/恢复中断点。
 
 import 说明（langgraph 1.x）：
   interrupt / Command 均来自 langgraph.types。
@@ -31,7 +31,7 @@ from langgraph_cs.nodes.utils import last_user_text
 
 logger = logging.getLogger(__name__)
 
-# 抛给外层的中断提示。外层（CLI）会把它打印给人工坐席看，提示需要人工接管。
+# 抛给外层的中断提示。外层（CLI/Web）把它展示给人工坐席，提示需要人工接管。
 _ESCALATION_PROMPT = "已转人工，本轮需要人工坐席处理。请坐席输入要回复用户的内容："
 
 

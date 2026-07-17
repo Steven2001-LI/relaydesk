@@ -1,16 +1,17 @@
 """
-route_by_intent —— 意图路由函数（阶段 3：conditional edges 的核心）。
+route_by_intent —— 意图路由函数。
 
 graph.py 用 `add_conditional_edges("rag", route_by_intent, {...})` 把 rag 之后的流向
 交给这个纯函数决定：它读 state 里的 intent / confidence，返回**下一个节点的名字**。
 
-对照旧版手写 agent_orchestrator.py 三层路由：
-  1) 意图路由：technical -> technical_agent，billing -> billing_agent，escalation -> escalation。
-  2) 降级路由（本函数实现的关键点）：confidence 低于阈值时，不管什么意图一律落到 general_agent
+路由分三层：
+  1) 意图路由：technical / billing / escalation 分别映射到对应专职节点。
+  2) 降级路由：confidence 低于阈值时，不管什么意图一律落到 general_agent
      —— 低置信不该交给专职 Agent 自作主张，先用通用 Agent 稳妥应答。
-     （旧版的"专职 Agent 运行时失败 -> 降级 general"那层，我们放在各专职节点内部 try/except。）
-  3) 升级路由：escalation 意图 -> escalation 节点（human-in-the-loop）。
-  本阶段暂不做性能路由（同类多实例按 routing_score 选优），留作扩展点。
+     （另一层"运行时失败"降级由各专职节点内部 try/except 返回兜底回复完成，
+      不经过本函数、也不改道 general_agent。）
+  3) 升级路由：escalation 意图直达 escalation 节点（human-in-the-loop）。
+  性能路由（同类多实例按 routing_score 选优）是既定扩展点，单实例场景不需要。
 
 把它写成不依赖 LLM、无副作用的纯函数，好处是可以离线穷举各种 intent/confidence 组合做断言。
 """
@@ -18,7 +19,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# 低于这个置信度就降级到 general_agent（教学阈值，对照旧版低置信度降级）。
+# 低于该置信度即降级到 general_agent。当前为经验值，尚未经 dev 集校准；
+# 调整时须同步跑路由评测、更新基线。
 CONFIDENCE_THRESHOLD = 0.5
 
 # 意图 -> 专职节点 的映射。未列出的意图（greeting/query/complaint/request/other 等）
