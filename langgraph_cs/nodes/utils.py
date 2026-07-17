@@ -3,7 +3,7 @@
 
 为什么单独抽一个文件？
   intent_node 和 rag_node 都需要"从 state 里取最后一条用户消息"这同一段逻辑。
-  按 code-reuse 指南：同一段逻辑出现在 2 个以上节点，就抽成共享工具，
+  同一段逻辑出现在 2 个以上节点就抽成共享工具，
   避免复制粘贴导致两边行为悄悄分叉（比如以后改了消息类型判断只改了一处）。
 """
 from langchain_core.messages import HumanMessage
