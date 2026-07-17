@@ -55,7 +55,12 @@ langgraph_cs/.venv/bin/python -m langgraph_cs.main
 
 ### 可选：以标准包方式安装（控制台入口命令）
 
-仓库根目录提供了 `pyproject.toml`，可把项目当作标准 Python 包安装，从而用更短的入口命令启动（`python -m langgraph_cs.web` 等原有方式仍然可用）。按用途选安装方式：
+仓库根目录提供了 `pyproject.toml`，可把项目当作标准 Python 包安装，从而用更短的入口命令启动（`python -m langgraph_cs.web` 等原有方式仍然可用）。
+
+> 以下命令均从仓库根目录执行，并假定目标虚拟环境**已激活**；沿用上文环境时，先运行：
+> `source langgraph_cs/.venv/bin/activate`
+
+按用途选安装方式：
 
 | 用途 | 命令 |
 |---|---|
