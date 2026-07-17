@@ -10,7 +10,7 @@
 效果：
     按条目切块（每个 ### 条目 = 一个 chunk）→ embedding → 写入
     langgraph_cs/data/chroma_rag/（collection: cs_faq）。灌库前会先清掉旧 collection 再重建。
-    之后 PR2 的 rag_node 用 store.build_retriever(k) 即可检索（chunk 带 source 与 item_id）。
+    之后 rag_node 用 store.build_retriever(k) 即可检索（chunk 带 source 与 item_id）。
 """
 import logging
 
