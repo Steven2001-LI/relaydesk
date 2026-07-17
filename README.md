@@ -55,16 +55,22 @@ langgraph_cs/.venv/bin/python -m langgraph_cs.main
 
 ### 可选：以标准包方式安装（控制台入口命令）
 
-仓库根目录提供了 `pyproject.toml`，可把项目当作标准 Python 包安装，从而用更短的入口命令启动（`python -m langgraph_cs.web` 等原有方式仍然可用）：
+仓库根目录提供了 `pyproject.toml`，可把项目当作标准 Python 包安装，从而用更短的入口命令启动（`python -m langgraph_cs.web` 等原有方式仍然可用）。按用途选安装方式：
+
+| 用途 | 命令 |
+|---|---|
+| 开发 / 测试（可编辑安装，改代码即时生效，含 pytest） | `pip install -e ".[test]"` |
+| 普通运行安装 | `pip install .` |
+| 精确运行时约束安装（按 requirements.lock 锁定版本） | `pip install -c requirements.lock .` |
 
 ```bash
-# 在已建好的 venv 里安装（-e 可编辑安装，改代码即时生效）
-langgraph_cs/.venv/bin/python -m pip install -e .
-
 # 装好后多出两个控制台命令：
 langgraph-cs-web    # 启动 Web 界面（等价于 python -m langgraph_cs.web）
 langgraph-cs        # 启动命令行对话（等价于 python -m langgraph_cs.main）
+
+# 跑离线测试（pytest 由 [test] extra 提供，不假设环境自带）：
+python -m pytest langgraph_cs -q
 ```
 
-> 需要可复现的精确依赖版本时，用仓库根的 `requirements.lock`（`pip freeze` 产物）：
-> `langgraph_cs/.venv/bin/python -m pip install -r requirements.lock`。
+> `requirements.lock` 仅承诺：Python 3.14.4 + 生成时 OS/架构组合。它是 `pip freeze` 产物，
+> 无平台元数据、无 hashes，不承诺跨平台可复现；用作 `-c` 约束文件锁定已知可用的版本组合。
