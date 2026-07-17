@@ -1,7 +1,7 @@
 """
 escalation_node —— 转人工节点（human-in-the-loop）。
 
-当意图被识别为 escalation（用户要求人工坐席 / 专职 Agent 无法处理）时，
+当意图被识别为 escalation（用户明确要求人工坐席）时，
 路由函数把请求送到这里。本节点不调 LLM，而是用 LangGraph 原生的 `interrupt()`
 **暂停整张图**，把"请人工坐席输入回复"的提示抛给外层（CLI / 评测）。
 外层拿到人工输入后，用 `graph.invoke(Command(resume=<人工输入>))` 恢复，
