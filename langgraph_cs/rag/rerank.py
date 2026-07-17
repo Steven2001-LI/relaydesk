@@ -54,7 +54,7 @@ def rerank(
     返回：
       [(原始下标 index, relevance_score, 文档原文), ...]，已按分数降序。
       其中 index 是该文档在传入 documents 列表里的下标，调用方可借此映射回
-      原始 Document 以保留 metadata（PR2 的 rag_node 会这么用）。
+      原始 Document 以保留 metadata（rag_node 正是这么用）。
 
     出错处理：
       网络/HTTP 错误会抛出 httpx 异常，由调用方决定如何兜底（例如 rag_node
