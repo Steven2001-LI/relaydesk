@@ -2,7 +2,8 @@
 
 > 执行者：Claude Code。评审方：Codex（只读）。仲裁依据：本文件。
 > 流水线位置：**注释清洗分支合并之后、企业场景迁移动工之前**。
-> 性质：机械性重构 + 顺带修复三处已知打包缺口。一次分支、一轮评审预期通过。
+> 性质：机械性重构。原"顺带修复三处打包缺口"已于 packaging-fix 阶段
+> （docs/packaging-fix-spec.md）提前完成，本阶段只保留回归验证。一次分支、一轮评审预期通过。
 
 ## 0. 命名总表（唯一事实来源）
 
@@ -29,19 +30,19 @@
 
 ## 2. 范围与顺带修复
 
-本次唯一允许的"超出改名"变更：**pyproject 打包三连修**——理由是这些行在改名中本来就要整体重写，拆两次提交反而制造重复 diff：
+原计划在本阶段顺带执行的 **pyproject 打包三连修**（dependencies 补 `"jinja2>=3.1.0"`、
+package-data 补 `"templates/*"` 与 `"static/js/*"`——修复前 wheel 会丢 index.html 与
+**7 个** js 文件）**已于 packaging-fix 阶段（docs/packaging-fix-spec.md）提前完成**，
+本阶段不再包含任何"超出改名"的功能性变更；§6.3 的 wheel 构建验证保留，
+作为改名后的**回归断言**。
 
-- dependencies 补上 `"jinja2>=3.1.0"`（requirements.txt 已有，pyproject 漏了，两处声称同步实为失同步）；
-- package-data 补 `"templates/*"`（当前 wheel 会丢 index.html）；
-- package-data 的 `"static/*"` 不递归，补 `"static/js/*"`（当前 wheel 会丢 6 个 js 文件）。
-
-除此之外任何"顺手优化"都算违规，由评审方拦截。
+任何"顺手优化"都算违规，由评审方拦截。
 
 ## 3. 执行步骤（按序，每步一个 commit）
 
 1. **包目录迁移**：`git mv langgraph_cs baton`。
 2. **import 与模块路径全量重写**：`from langgraph_cs...` / `import langgraph_cs` / `python -m langgraph_cs...` → `baton`。覆盖范围：全部 .py（含 tests、scripts、eval）、两个 README 的命令示例、pyproject 的 `packages` 与 `package-data` 键、docstring 中出现的模块路径。
-3. **pyproject 重写**：name / scripts（`baton = "baton.main:main"`，`baton-web = "baton.web.__main__:main"`）/ packages / package-data（含 §2 三连修）/ 补 jinja2；description 改为**场景中立**表述："基于 LangGraph 的多 Agent 服务台系统：意图路由 → RAG → 工具调用 → 人工审批 → 评测闭环"（企业场景措辞留给迁移）；keywords 去掉 customer-service，换 multi-agent / service-desk / human-in-the-loop / rag / langgraph。
+3. **pyproject 重写**：name / scripts（`baton = "baton.main:main"`，`baton-web = "baton.web.__main__:main"`）/ packages / package-data（键名随包名迁移，条目内容保持 packaging-fix 阶段已修好的清单，含 test extra 与 jinja2 依赖）；description 改为**场景中立**表述："基于 LangGraph 的多 Agent 服务台系统：意图路由 → RAG → 工具调用 → 人工审批 → 评测闭环"（企业场景措辞留给迁移）；keywords 去掉 customer-service，换 multi-agent / service-desk / human-in-the-loop / rag / langgraph。
 4. **标识符替换**：CSState → BatonState（state.py 及所有引用处，含测试）；CS_CHECKPOINT → BATON_CHECKPOINT（graph.py、.env.example、README、verify_persistence.py、相关测试）；COLLECTION_NAME "cs_faq" → "baton_kb"（store.py）；LANGSMITH_PROJECT 默认值 → "baton"（config.py、.env.example）。
 5. **品牌词替换**：全库 "RelayDesk"/"relaydesk" → "Baton"/"baton"，覆盖 agent prompts、web/templates/index.html、web/static/js、两个 README 标题与正文、.env.example 注释。遵守 §1.1 的"只换名字"边界。
 6. **README 命令与路径同步**：快速开始里的 venv 路径、`python -m` 命令、gh 仓库链接（等所有者完成 §5.1 后填新 URL）。
@@ -69,7 +70,7 @@
    ```
    预期零命中；确属合法的豁免逐条列入摘要表。
 2. `python -m pytest baton -q` → 50/50。
-3. **wheel 构建验证**（打包三连修的证据）：
+3. **wheel 构建验证**（packaging-fix 阶段成果在改名后的回归断言）：
    ```bash
    pip install build && python -m build --wheel
    unzip -l dist/*.whl | grep -E "templates/index.html|static/js/|faq/.*\.md"
