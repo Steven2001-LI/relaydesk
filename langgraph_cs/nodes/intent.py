@@ -18,10 +18,9 @@ from langgraph_cs.nodes.utils import last_user_text
 
 logger = logging.getLogger(__name__)
 
-# 支持的意图集合。escalation（转人工/人工升级）：当用户明确要求人工坐席、或专职 Agent
-# 无法处理时，由这个意图触发 human-in-the-loop。另一种实现是关键词检测（"转人工/人工客服"
-# 词表），这里选择交给 LLM 统一识别成一个意图：与其余意图共用同一条分类路径，
-# 对说法变体的召回也更好。
+# 支持的意图集合。escalation（转人工）：用户明确要求人工坐席时，由这个意图触发
+# human-in-the-loop。另一种实现是关键词检测（"转人工/人工客服"词表）；这里交给 LLM
+# 统一识别成一个意图，与其余意图共用同一条分类路径，无需另设关键词触发分支。
 INTENTS = ["greeting", "query", "technical", "billing", "complaint", "request", "escalation", "other"]
 
 # 类别带一行定义：只给类别名时，LLM 会把"查退款进度"分给 query、"申请退款"分给
