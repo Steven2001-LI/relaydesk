@@ -1,13 +1,12 @@
 """
 intent_node —— 意图识别节点。
 
-教学版：只用 LLM 单路识别（朴素但好懂）。
-对照旧版 core/intent_recognizer.py：那里是 LLM(70%) + Embedding(20%) + 关键词(10%)
-三路加权融合。等你把单路跑通、理解了节点怎么读写 state，阶段进阶时再把另外两路加回来，
-就能在简历里讲"为什么要三路融合、各自补什么短板"。
+意图识别采用 LLM 单路分类。备选方案是 LLM/Embedding/关键词多路加权融合；
+当前意图集与语料规模下，单路 LLM 已满足路由准确率需求且实现更简单。
+若意图数量增长导致单路准确率下降，多路融合是既定扩展点。
 
 节点契约：
-  输入：完整 state（我们只关心最后一条用户消息）
+  输入：完整 state（只读最后一条用户消息）
   输出：{"intent": ..., "confidence": ..., "escalated": False}  —— 只返回要更新的字段
         每轮在这里复位 escalated，避免转人工后标记随 checkpointer 跨轮残留。
 """
@@ -19,10 +18,10 @@ from langgraph_cs.nodes.utils import last_user_text
 
 logger = logging.getLogger(__name__)
 
-# 支持的意图集合（精简版，对照旧版 IntentCategory）。
-# 阶段 3 新增 escalation（转人工/人工升级）：当用户明确要求人工坐席、或专职 Agent 无法处理时，
-# 由这个意图触发 human-in-the-loop。对照旧版里 _needs_escalation 的关键词检测
-# （转人工 / 人工客服 / escalate / 无法处理）——这里交给 LLM 统一识别成一个意图。
+# 支持的意图集合。escalation（转人工/人工升级）：当用户明确要求人工坐席、或专职 Agent
+# 无法处理时，由这个意图触发 human-in-the-loop。另一种实现是关键词检测（"转人工/人工客服"
+# 词表），这里选择交给 LLM 统一识别成一个意图：与其余意图共用同一条分类路径，
+# 对说法变体的召回也更好。
 INTENTS = ["greeting", "query", "technical", "billing", "complaint", "request", "escalation", "other"]
 
 # 类别带一行定义：只给类别名时，LLM 会把"查退款进度"分给 query、"申请退款"分给
@@ -77,11 +76,11 @@ def intent_node(state) -> dict:
                 {"role": "user", "content": user_text},
             ]
         )
-    except Exception as ex:  # noqa: BLE001 教学版统一兜底：意图识别失败 -> 降级路由，不崩图
+    except Exception as ex:  # noqa: BLE001 节点边界兜底：意图识别失败 -> 降级路由，不让单点异常拖垮整图
         logger.warning("意图识别调用 LLM 失败，降级为 other：%s", ex)
         return {"intent": "other", "confidence": 0.0, "escalated": False}
 
-    # 朴素解析 + 兜底：解析失败就降级为 other（对照旧版的"低置信度降级"思路）。
+    # 解析失败就降级为 other——与低置信度降级同一原则：识别结果不可靠时走通用路径。
     intent, confidence = "other", 0.0
     try:
         data = json.loads(_strip_code_fence(resp.content))
